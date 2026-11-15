@@ -340,3 +340,20 @@ describe("quality", () => {
     expect(isQuality(undefined)).toBe(false);
   });
 });
+
+describe("wall parts", () => {
+  it("gives each wall its own mesh, adding up to the whole", () => {
+    const makeId = counter();
+    const floor = addWall(rectangle(emptyFloor(), makeId, 0, 0, 4, 3), p([2, 0]), p([2, 3]), makeId);
+    const mesh = buildFloorMesh(floor, options);
+    expect(mesh.wallParts.map((part) => part.id).sort()).toEqual(floor.walls.map((wall) => wall.id).sort());
+    const total = mesh.wallParts.reduce((sum, part) => sum + part.data.positions.length, 0);
+    expect(total).toBe(mesh.walls.positions.length);
+    for (const part of mesh.wallParts) {
+      expectWellFormed(part.data);
+      expect(part.height).toBe(2.4);
+    }
+    const divider = mesh.wallParts.find((part) => part.id === wallBetween(floor, [2, 0], [2, 3]))!;
+    expect(divider.centre).toEqual([2, 1.5]);
+  });
+});

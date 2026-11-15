@@ -2,7 +2,7 @@
 
 Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
 
-> **Early days.** You can draw the walls and rooms of a floor from above, furnish them from a catalogue of 33 pieces, see it all in 3D beside the plan as you work, link rooms to Home Assistant areas, and place your lights and switches: they glow when on, and a tap in the 3D view switches them. Other kinds of device are not supported yet, and the dashboard card only shows a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
+> **Early days.** You can draw the walls and rooms of a floor from above, furnish them from a catalogue of 33 pieces, see it all in 3D beside the plan as you work, link rooms to Home Assistant areas, and place your lights and switches: they glow when on, and a tap in the 3D view switches them. A dashboard card shows the whole house, a floor or a room, live. This is a first alpha: one floor in the editor, no doors or windows, and lights and switches only. [SPEC.md](SPEC.md) has the design and the build order.
 
 ## Install
 
@@ -17,15 +17,20 @@ There are no releases yet, and the Marketplace installs Diorama from the zip att
 ## Use
 
 - **Diorama** in the sidebar (administrators only) is where the house is drawn. Press `W` to draw walls: click each corner, close the loop to make a room, type a length and press Enter for an exact wall. `F` opens the furniture list: pick a piece and click to place it, `R` turns it. `B` lists your lights and switches: pick one and click where it is, or on a lamp to make it that lamp. `V` selects and moves. Drawing needs a desktop-sized screen.
-- On a dashboard, add the **Diorama** card:
+- On a dashboard, add the **Diorama** card and choose what it shows in its settings, or in YAML:
 
 ```yaml
 type: custom:diorama-card
-view: room          # house | floor | room
-room: r1            # for view: room
-floor: f_ground     # for view: floor
+view: room            # house | floor | room
+floor: f_ground       # for view: floor or room
+room: r1              # for view: room
 aspect_ratio: "16:9"
+walls: auto           # auto lowers the walls in the way; full | low
+interactive: true     # false: taps do nothing
+controls: true        # false: the view cannot be turned or zoomed
 ```
+
+Tap a light or switch to work it; press and hold for its details. Any number of cards can share a dashboard.
 
 ## Develop
 

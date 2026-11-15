@@ -1,8 +1,8 @@
-import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { Catalogue } from "../core/catalogue";
 import { hexColour, type Colour } from "../core/mesh";
-import { deviceHints, pickQuality, type Quality } from "../core/quality";
+import type { WallMode } from "../core/cutaway";
 import type { Fixture } from "../core/scene";
 import { FixtureStates, moreInfo } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
@@ -17,33 +17,58 @@ export class DioramaSceneView extends LitElement {
   @property({ attribute: false }) catalogue?: Catalogue;
   /** For the state of the entities shown, and to act on them. */
   @property({ attribute: false }) hass?: HomeAssistant;
-  /** Whether tapping a fixture does anything. */
-  @property({ type: Boolean }) interactive = true;
+  /** Whether tapping a fixture does anything. Set it as a property: being
+   * true by default, it cannot be switched off with an attribute. */
+  @property({ attribute: false }) interactive = true;
   /** A room to pick out, by id. */
   @property({ attribute: false }) highlightRoom: string | null = null;
-  /** Leave unset to choose by device. */
-  @property() quality?: Quality;
+  /** Whether walls on the camera's side drop out of the way. */
+  @property() walls: WallMode = "auto";
+  /** Whether dragging and scrolling move the camera. A property, as above. */
+  @property({ attribute: false }) controls = true;
+  /** Hide the button that frames the house again. */
+  @property({ type: Boolean, attribute: "no-reset" }) noReset = false;
 
   @state() private failed = false;
 
   private renderer?: SceneRenderer;
   private readonly states = new FixtureStates(() => this.showStates());
   private resizeObserver?: ResizeObserver;
+  private intersectionObserver?: IntersectionObserver;
+  /** On screen, on a tab that is showing. Not until the browser says so: a
+   * card far down a long dashboard should draw nothing at all. */
+  private visible = false;
+  private onScreen = false;
 
   override connectedCallback(): void {
     super.connectedCallback();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this);
+    // Nothing is drawn for a view that is scrolled out of sight or on a tab
+    // in the background.
+    this.intersectionObserver = new IntersectionObserver(([entry]) => {
+      this.onScreen = entry.isIntersecting;
+      this.updateVisible();
+    });
+    this.intersectionObserver.observe(this);
+    document.addEventListener("visibilitychange", this.updateVisible);
   }
 
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.resizeObserver?.disconnect();
+    this.intersectionObserver?.disconnect();
+    document.removeEventListener("visibilitychange", this.updateVisible);
     this.states.dispose();
     this.renderer?.dispose();
     this.renderer?.canvas.remove();
     this.renderer = undefined;
   }
+
+  private updateVisible = (): void => {
+    this.visible = this.onScreen && document.visibilityState !== "hidden";
+    this.renderer?.setActive(this.visible);
+  };
 
   /** Point the camera at the whole house again. */
   frame(): void {
@@ -57,9 +82,11 @@ export class DioramaSceneView extends LitElement {
         ? html`<p class="message" role="alert">
             The 3D view needs WebGL, which this browser has switched off or does not have.
           </p>`
-        : html`<button class="frame" title="Show everything" @click=${this.frame}>
-            Reset view
-          </button>`}
+        : this.noReset || !this.controls
+          ? nothing
+          : html`<button class="frame" title="Show everything" @click=${this.frame}>
+              Reset view
+            </button>`}
     `;
   }
 
@@ -67,7 +94,7 @@ export class DioramaSceneView extends LitElement {
     if (this.failed) return;
     if (!this.renderer) {
       try {
-        this.renderer = new SceneRenderer(this.quality ?? pickQuality(deviceHints()));
+        this.renderer = new SceneRenderer();
       } catch (error) {
         console.error("Diorama: could not start the 3D view", error);
         this.failed = true;
@@ -82,11 +109,16 @@ export class DioramaSceneView extends LitElement {
           if (this.interactive) moreInfo(this, fixture.entity_id);
         },
       });
+      this.renderer.setWallMode(this.walls);
+      this.renderer.setControlsEnabled(this.controls);
+      this.renderer.setActive(this.visible);
       this.resize();
       this.show();
       this.showStates();
       return;
     }
+    if (changed.has("walls")) this.renderer.setWallMode(this.walls);
+    if (changed.has("controls")) this.renderer.setControlsEnabled(this.controls);
     if (changed.has("floors") || changed.has("hass")) this.showStates();
     if (changed.has("floors") || changed.has("highlightRoom") || changed.has("catalogue")) {
       this.show();

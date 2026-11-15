@@ -15,7 +15,6 @@ import {
   Matrix4,
   Mesh,
   MeshLambertMaterial,
-  PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   Quaternion,
@@ -23,17 +22,18 @@ import {
   ShadowMaterial,
   SRGBColorSpace,
   Vector3,
-  WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
-import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
-import { QUALITY, type Quality } from "../core/quality";
 import type { FixtureVisual } from "../core/bindings";
+import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
+import { LOW_WALL, wallsToLower, type WallMode } from "../core/cutaway";
+import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
+import { QUALITY } from "../core/quality";
 import type { Fixture, Floor, Item } from "../core/scene";
 import { FixtureLayer } from "./fixture-layer";
 import { loadedModel, loadModel } from "./models";
 import { FLOOR_COLOURS, OUTSIDE_COLOUR, WALL_TOP_COLOUR } from "./palette";
+import { sharedGl, type SharedGl } from "./shared-gl";
 
 export interface SceneFloor {
   floor: Floor;
@@ -49,11 +49,6 @@ export interface SceneContent {
   highlightColour?: Colour;
 }
 
-const FIELD_OF_VIEW = 35;
-/** Further than this, in CSS pixels, and a press is a drag, not a tap. */
-const TAP_SLOP = 6;
-const HOLD_MILLISECONDS = 500;
-
 export interface SceneCallbacks {
   /** A fixture was tapped. */
   onTap?(fixture: Fixture): void;
@@ -61,10 +56,25 @@ export interface SceneCallbacks {
   onHold?(fixture: Fixture): void;
 }
 
+const FIELD_OF_VIEW = 35;
+/** Further than this, in CSS pixels, and a press is a drag, not a tap. */
+const TAP_SLOP = 6;
+const HOLD_MILLISECONDS = 500;
+
+interface WallMesh {
+  id: string;
+  mesh: Mesh;
+  /** The middle of the wall on the floor: [x, z]. */
+  centre: readonly [number, number];
+  height: number;
+}
+
 export class SceneRenderer {
+  /** The canvas to put on the page. The picture is copied onto it. */
   readonly canvas: HTMLCanvasElement;
 
-  private readonly renderer: WebGLRenderer;
+  private readonly gl: SharedGl;
+  private readonly surface: CanvasRenderingContext2D;
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.1, 500);
   private readonly controls: OrbitControls;
@@ -77,15 +87,20 @@ export class SceneRenderer {
   private readonly unknownMaterial = new MeshLambertMaterial({ color: 0xb8bcc2 });
   private readonly unknownGeometry = new BoxGeometry(0.5, 0.5, 0.5).translate(0, 0.25, 0);
   private readonly fixtures: FixtureLayer;
+  private readonly forgetRestored: () => void;
+
+  private walls: WallMesh[] = [];
+  private wallMode: WallMode = "auto";
   private callbacks: SceneCallbacks = {};
   private press?: { x: number; y: number; fixture?: Fixture; timer: number; held: boolean };
   /** Goes up with every setContent: a model that arrives late knows whether
    * the scene it was for is still the one shown. */
   private generation = 0;
-  private readonly quality: Quality;
-
   private frameRequest = 0;
   private disposed = false;
+  /** Off screen or on a hidden tab: nothing is drawn until it is back. */
+  private active = true;
+  private stale = false;
   /** Which floors the camera was last framed on. */
   private framedOn = "";
   /** Whether someone has moved the camera since it was last framed. */
@@ -94,17 +109,15 @@ export class SceneRenderer {
   private radius = 5;
 
   /** Throws if the browser cannot give us WebGL. */
-  constructor(quality: Quality) {
-    this.quality = quality;
-    const settings = QUALITY[quality];
-    this.renderer = new WebGLRenderer({ antialias: settings.antialias, alpha: true });
-    this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.shadowMap.enabled = settings.shadows;
-    this.renderer.shadowMap.type = PCFSoftShadowMap;
-    this.canvas = this.renderer.domElement;
+  constructor() {
+    this.gl = sharedGl();
+    const settings = QUALITY[this.gl.quality];
+    this.canvas = document.createElement("canvas");
     this.canvas.style.display = "block";
     this.canvas.style.touchAction = "none";
+    const surface = this.canvas.getContext("2d");
+    if (!surface) throw new Error("No 2D canvas");
+    this.surface = surface;
 
     // Balanced so that a floor in full sun shows its own colour, neither
     // darker nor washed out, and one in shadow is a little over half as bright.
@@ -137,13 +150,17 @@ export class SceneRenderer {
     this.controls.addEventListener("change", this.requestRender);
     this.controls.addEventListener("start", this.onCameraMoved);
 
-    this.fixtures = new FixtureLayer(quality === "high" ? 4 : 0);
+    this.fixtures = new FixtureLayer(this.gl.quality === "high" ? 4 : 0);
     this.scene.add(this.fixtures.group);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerup", this.onPointerUp);
     this.canvas.addEventListener("pointercancel", this.onPointerCancel);
+    this.forgetRestored = this.gl.onRestored(this.requestRender);
   }
+
+  /** How many pictures this view has drawn. */
+  frames = 0;
 
   /** Say what should happen when a fixture is tapped or held. */
   setCallbacks(callbacks: SceneCallbacks): void {
@@ -154,6 +171,26 @@ export class SceneRenderer {
   setVisuals(visuals: ReadonlyMap<string, FixtureVisual>): void {
     this.fixtures.setVisuals(visuals);
     this.requestRender();
+  }
+
+  /** Whether walls on the camera's side drop out of the way ("auto"), all
+   * stand ("full") or all are low ("low"). */
+  setWallMode(mode: WallMode): void {
+    if (mode === this.wallMode) return;
+    this.wallMode = mode;
+    this.requestRender();
+  }
+
+  /** Whether dragging and scrolling move the camera. */
+  setControlsEnabled(enabled: boolean): void {
+    this.controls.enabled = enabled;
+  }
+
+  /** Stop drawing while the view cannot be seen, and catch up when it can. */
+  setActive(active: boolean): void {
+    if (active === this.active) return;
+    this.active = active;
+    if (active && this.stale) this.requestRender();
   }
 
   /** Replace what is shown. The camera stays where it is unless the set of
@@ -172,7 +209,11 @@ export class SceneRenderer {
         highlightColour: content.highlightColour,
       });
       this.addMesh(mesh.slabs, this.slabMaterial, elevation, false);
-      this.addMesh(mesh.walls, this.wallMaterial, elevation, true);
+      // A mesh per wall, so that each can be lowered on its own.
+      for (const part of mesh.wallParts) {
+        const wall = this.addMesh(part.data, this.wallMaterial, elevation, true);
+        if (wall) this.walls.push({ id: part.id, mesh: wall, centre: part.centre, height: part.height });
+      }
       // A fixture with a model of its own is drawn like furniture.
       const fixtureModels: Item[] = floor.fixtures
         .filter((fixture) => fixture.item === null && fixture.model !== null)
@@ -192,7 +233,6 @@ export class SceneRenderer {
         max.max(new Vector3(mesh.bounds.max[0], mesh.bounds.max[1] + elevation, mesh.bounds.max[2]));
       }
     }
-
     this.fixtures.setFloors(content.floors, content.catalogue);
 
     const empty = !Number.isFinite(min.x);
@@ -228,8 +268,9 @@ export class SceneRenderer {
 
   resize(width: number, height: number, devicePixelRatio: number): void {
     if (width <= 0 || height <= 0) return;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, QUALITY[this.quality].maxPixelRatio));
-    this.renderer.setSize(width, height, false);
+    const ratio = Math.min(devicePixelRatio, this.gl.maxPixelRatio);
+    this.canvas.width = Math.max(1, Math.round(width * ratio));
+    this.canvas.height = Math.max(1, Math.round(height * ratio));
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
     this.camera.aspect = width / height;
@@ -243,6 +284,7 @@ export class SceneRenderer {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.frameRequest);
+    this.forgetRestored();
     this.controls.removeEventListener("change", this.requestRender);
     this.controls.removeEventListener("start", this.onCameraMoved);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
@@ -260,8 +302,7 @@ export class SceneRenderer {
     (this.ground.material as ShadowMaterial).dispose();
     this.wallMaterial.dispose();
     this.slabMaterial.dispose();
-    this.renderer.dispose();
-    this.renderer.forceContextLoss();
+    // The WebGL context is shared and stays.
   }
 
   private addMesh(
@@ -269,8 +310,8 @@ export class SceneRenderer {
     material: MeshLambertMaterial,
     elevation: number,
     castShadow: boolean,
-  ): void {
-    if (data.positions.length === 0) return;
+  ): Mesh | undefined {
+    if (data.positions.length === 0) return undefined;
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(data.positions), 3));
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(data.normals), 3));
@@ -291,9 +332,11 @@ export class SceneRenderer {
     mesh.receiveShadow = true;
     mesh.userData.ownsGeometry = true;
     this.house.add(mesh);
+    return mesh;
   }
 
   private clearHouse(): void {
+    this.walls = [];
     for (const child of [...this.house.children]) {
       this.house.remove(child);
       if (child instanceof InstancedMesh) child.dispose();
@@ -360,6 +403,23 @@ export class SceneRenderer {
     // Instances are spread about; the model's own bounds would cull them.
     mesh.frustumCulled = false;
     this.house.add(mesh);
+  }
+
+  /** Lower the walls that are between the camera and what it looks at. */
+  private applyCutaway(): void {
+    const camera = this.camera.position;
+    const target = this.controls.target;
+    const lowered = wallsToLower(
+      this.walls,
+      this.wallMode,
+      [camera.x, camera.y, camera.z],
+      [target.x, target.y, target.z],
+      Math.max(0.25, this.radius * 0.08),
+    );
+    for (const wall of this.walls) {
+      wall.mesh.scale.y =
+        lowered.has(wall.id) && wall.height > LOW_WALL ? LOW_WALL / wall.height : 1;
+    }
   }
 
   /** The distance from which a sphere round the house just fits the view,
@@ -453,17 +513,26 @@ export class SceneRenderer {
     this.cameraMoved = true;
   };
 
-  /** Draw once, soon. Nothing is drawn unless something asks. */
+  /** Draw once, soon. Nothing is drawn unless something asks, and nothing at
+   * all while the view cannot be seen. */
   private requestRender = (): void => {
-    if (this.disposed || this.frameRequest) return;
+    if (this.disposed) return;
+    if (!this.active) {
+      this.stale = true;
+      return;
+    }
+    if (this.frameRequest) return;
     this.frameRequest = requestAnimationFrame(() => {
       this.frameRequest = 0;
-      if (this.disposed) return;
+      if (this.disposed || !this.active) return;
+      this.stale = false;
       // With damping the controls keep gliding: update() moves the camera a
       // little and fires "change", which asks for the next frame. When the
       // glide ends, so do the frames.
       this.controls.update();
-      this.renderer.render(this.scene, this.camera);
+      this.applyCutaway();
+      this.gl.draw(this.scene, this.camera, this.surface);
+      this.frames++;
     });
   };
 }

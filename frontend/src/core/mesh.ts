@@ -28,9 +28,21 @@ export interface MeshData {
   colours: number[];
 }
 
+/** One wall on its own, so that it can be lowered out of the camera's way. */
+export interface WallPart {
+  id: string;
+  data: MeshData;
+  /** The middle of the wall on the floor, in model axes: [x, z]. */
+  centre: [number, number];
+  height: number;
+}
+
 export interface FloorMesh {
   slabs: MeshData;
+  /** Every wall in one mesh. */
   walls: MeshData;
+  /** The same walls, one mesh each. */
+  wallParts: WallPart[];
   /** The box the floor fits in, in model axes; undefined when it is empty. */
   bounds?: { min: [number, number, number]; max: [number, number, number] };
 }
@@ -256,9 +268,11 @@ export function buildFloorMesh(floor: Floor, options: MeshOptions): FloorMesh {
 
   const footprints = wallFootprints(floor);
   const sides = wallSides(floor);
+  const wallParts: WallPart[] = [];
   for (const wall of floor.walls) {
     const outline = footprints.get(wall.id);
     if (!outline) continue;
+    const part: MeshData = { positions: [], normals: [], colours: [] };
     const height = Math.min(wall.height ?? floor.wall_height, options.maxWallHeight ?? Infinity);
     const [leftRoom, rightRoom] = sides.get(wall.id) ?? [undefined, undefined];
     const leftColour = leftRoom ? hexColour(leftRoom.wall_colour) : options.outsideColour;
@@ -276,7 +290,7 @@ export function buildFloorMesh(floor: Floor, options: MeshOptions): FloorMesh {
       const colour = i === 1 ? leftColour : i === 4 ? rightColour : options.outsideColour;
       const [first, second] = turn > 0 ? [q, p] : [p, q];
       push(
-        walls,
+        part,
         [
           [first.x, 0, first.y],
           [second.x, 0, second.y],
@@ -289,8 +303,20 @@ export function buildFloorMesh(floor: Floor, options: MeshOptions): FloorMesh {
         colour,
       );
     }
-    flat(walls, outline, height, options.wallTopColour);
+    flat(part, outline, height, options.wallTopColour);
+    walls.positions.push(...part.positions);
+    walls.normals.push(...part.normals);
+    walls.colours.push(...part.colours);
+    // outline[0] and outline[3] are the wall's two ends.
+    wallParts.push({
+      id: wall.id,
+      data: part,
+      centre: [(outline[0].x + outline[3].x) / 2, (outline[0].y + outline[3].y) / 2],
+      height,
+    });
   }
 
-  return Number.isFinite(min[0]) ? { slabs, walls, bounds: { min, max } } : { slabs, walls };
+  return Number.isFinite(min[0])
+    ? { slabs, walls, wallParts, bounds: { min, max } }
+    : { slabs, walls, wallParts };
 }

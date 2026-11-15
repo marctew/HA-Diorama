@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { aspectRatioValue, DEFAULT_CARD_CONFIG, parseCardConfig } from "../src/core/card-config";
+import {
+  aspectRatioValue,
+  DEFAULT_CARD_CONFIG,
+  parseCardConfig,
+  tidyCardConfig,
+} from "../src/core/card-config";
 
 describe("parseCardConfig", () => {
   it("fills in the defaults for an empty configuration", () => {
@@ -16,6 +21,7 @@ describe("parseCardConfig", () => {
       controls: false,
       day_night: false,
       aspect_ratio: "4:3",
+      walls: "low",
     });
     expect(config).toEqual({
       view: "room",
@@ -26,6 +32,7 @@ describe("parseCardConfig", () => {
       controls: false,
       day_night: false,
       aspect_ratio: "4:3",
+      walls: "low",
     });
   });
 
@@ -54,6 +61,7 @@ describe("parseCardConfig", () => {
     [{ camera: "  " }, "camera must be text"],
     [{ aspect_ratio: "wide" }, "aspect_ratio must look like"],
     [{ aspect_ratio: "16:0" }, "aspect_ratio must look like"],
+    [{ walls: "glass" }, "walls must be one of"],
   ])("rejects %j", (raw, message) => {
     expect(() => parseCardConfig(raw)).toThrow(message);
   });
@@ -64,5 +72,31 @@ describe("aspectRatioValue", () => {
     expect(aspectRatioValue("16:9")).toBeCloseTo(16 / 9);
     expect(aspectRatioValue(" 4 / 3 ")).toBeCloseTo(4 / 3);
     expect(aspectRatioValue("1.5:1")).toBe(1.5);
+  });
+});
+
+describe("tidyCardConfig", () => {
+  it("keeps only what differs from the defaults", () => {
+    expect(
+      tidyCardConfig({ type: "custom:diorama-card", view: "house", interactive: true, walls: "auto", floor: "f1" }),
+    ).toEqual({ type: "custom:diorama-card", view: "house" });
+  });
+
+  it("keeps the floor and room a view needs, and anything changed", () => {
+    expect(
+      tidyCardConfig({ view: "room", floor: "f1", room: "r1", interactive: false, aspect_ratio: "1:1", walls: "low" }),
+    ).toEqual({
+      type: "custom:diorama-card",
+      view: "room",
+      floor: "f1",
+      room: "r1",
+      interactive: false,
+      aspect_ratio: "1:1",
+      walls: "low",
+    });
+  });
+
+  it("refuses what the card would refuse", () => {
+    expect(() => tidyCardConfig({ view: "floor" })).toThrow("needs a floor");
   });
 });

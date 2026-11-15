@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 to 6 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, furniture, and lights and switches bound to the scene. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 7 are built, which is the first alpha: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, furniture, lights and switches bound to the scene, and the dashboard card. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -177,7 +177,10 @@ Still to come
 
 ## 7. Renderer
 
-- One renderer class (`render/scene-renderer.ts`) used by the panel preview and, from stage 7, the card. Input: floor documents with their elevations, and what to highlight. three.js and the renderer are in a chunk of their own, fetched the first time a 3D view is shown.
+- One renderer class (`render/scene-renderer.ts`) used by the panel preview and the card. There is one WebGL context for the whole page (`render/shared-gl.ts`): each view asks it to draw its scene, and the picture is copied onto the view's own 2D canvas. A dashboard can therefore hold any number of cards (22 on one page were tried), and models are uploaded to the GPU once however many views show them. The furniture pictures in the drawer use it too.
+- Views (`core/views.ts`): the whole house with its floors stacked at their elevations, one floor, or one room, which is the floor cut down to that room, the walls round and inside it, and what stands in it.
+- Walls in the camera's way are lowered to 0.3 m (`core/cutaway.ts`): those on the camera's side of what it looks at, re-decided as the camera turns. From nearly overhead nothing is lowered. A view can ask for all walls at full height or all low instead. Each wall is its own mesh so that it can be lowered alone.
+- A view that is scrolled out of sight, or on a tab in the background, draws nothing and catches up when it is back. Input: floor documents with their elevations, and what to highlight. three.js and the renderer are in a chunk of their own, fetched the first time a 3D view is shown.
 - The triangles are made without three.js (`core/mesh.ts`), so that part is unit tested: each wall is a solid whose corners are mitred against its neighbours, so walls tile without gaps or overlap; each face of a wall takes the wall colour of the room it looks into, and the outside colour where it looks into none; one slab per room in its floor finish's colour; no ceilings. One mesh of walls and one of slabs per floor, coloured per vertex.
 - Look: flat-shaded materials, a small fixed palette, soft sky and ambient light, one directional "sun" with a single shadow map. No physically based lighting. The background is transparent, so the page shows through.
 - Furniture: each model file is loaded once and drawn as one instanced mesh per model, whatever the number of pieces. A model the catalogue does not know, or that fails to load, is a grey box.
@@ -185,12 +188,12 @@ Still to come
 - Taps are matched to fixtures on screen, within 22 pixels of the fixture, so the target is 44 pixels however small it is drawn. A press that moves is a camera drag and never a tap.
 - Camera: orbit with limits, pinch and drag on touch, zoom limited to the size of the house. It frames the whole house until someone moves it, and "Reset view" frames it again. Editing the floor does not move the camera.
 - Render on demand only: a frame is drawn when the content, camera or size changes, and while the camera glides to a stop. Measured idle: no frames.
-- Quality tiers (`core/quality.ts`), picked from the device's cores, memory and whether it is a phone or tablet, overridable: low has no shadows or antialiasing and a pixel ratio of 1; medium has a 1024 shadow map and a pixel ratio up to 1.5; high a 2048 shadow map and up to 2.
+- Quality tiers (`core/quality.ts`), picked once per page from the device's cores, memory and whether it is a phone or tablet (the context is shared, so it cannot differ between cards): low has no shadows or antialiasing and a pixel ratio of 1; medium has a 1024 shadow map and a pixel ratio up to 1.5; high a 2048 shadow map and up to 2.
 
 Still to come
 
 - Cut-outs for doors and windows (stage 8).
-- Views: `house` (all floors stacked, exploded spacing optional), `floor`, `room` (that room plus its walls, neighbours hidden or ghosted). Walls between the camera and the room fade out or drop to a low cut height. Saved camera presets per view, smooth transitions, double-tap a room to focus it (stages 7 and 8). The mesh builder already takes a maximum wall height for the cut.
+- Exploded spacing between floors in the house view, ghosted neighbours in the room view, saved camera presets per view, smooth transitions, double-tap a room to focus it (stage 8).
 - Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
 
 ## 8. Entity bindings
@@ -221,22 +224,30 @@ A binding is a small module per kind: which entities it accepts, how state maps 
 ```yaml
 type: custom:diorama-card
 view: room            # house | floor | room
-floor: f_ground       # for view: floor
+floor: f_ground       # for view: floor, and best given for view: room
 room: r1              # for view: room
-camera: default       # saved preset name
 interactive: true     # false = display only, taps ignored
 controls: true        # orbit/zoom gestures; false locks the camera
-day_night: true
+walls: auto           # auto | full | low
 aspect_ratio: "16:9"
+camera: default       # accepted, not used yet (stage 8)
+day_night: true       # accepted, not used yet (stage 9)
 ```
 
-- Visual config editor (`getConfigElement`) with pickers for view, floor, room and preset; `getStubConfig` returns the whole house. Registered in `window.customCards` with a preview.
-- Works in sections layout (`getGridOptions`) and masonry (`getCardSize`).
-- A room card fetches only its floor's document.
-- Browsers limit live WebGL contexts, so cards do not each own one. A single shared `WebGLRenderer` on an offscreen canvas renders each visible card in turn and copies the result into that card's 2D canvas. Cards off screen (IntersectionObserver) or on a hidden tab are not rendered.
-- Subscribes to `diorama/subscribe` and reloads when the scene is saved elsewhere.
-- Respects Home Assistant themes for card chrome (background, text) and the user's reduced-motion setting.
-- Empty states: no house drawn yet (link to the panel for admins), room or floor no longer exists, WebGL unavailable.
+Built (stage 7)
+
+- The element on the dashboard (`entries/card.ts`) is a stub of a few kilobytes that is on every Home Assistant page. It loads the card proper the first time one is shown, and that loads three.js only once there is a house to draw.
+- The card loads the house, the floors its view needs and no others (`shared/scene-controller.ts`), and the catalogue. A room card that names its floor fetches one floor. It subscribes to saves and reloads what changed, so an edit in the panel shows on every dashboard without a reload.
+- Lights and switches are live and work as in the editor's preview: tap toggles, hold opens the details. `interactive: false` makes it display only.
+- Visual config editor (`card/card-editor.ts`), returned from `getConfigElement`: what to show, floor, room, shape, walls, and the two toggles. It stores only what differs from the defaults. `getStubConfig` returns the whole house. Registered in `window.customCards` with a preview.
+- Sizes itself by `aspect_ratio`: `rows: "auto"` in the sections view (`getGridOptions`), a matching `getCardSize` for masonry.
+- Empty states: no house drawn yet (with a link to the panel for admins), the room or floor is no longer there, the 3D view could not be loaded or WebGL is unavailable.
+- Card chrome follows Home Assistant's theme through `ha-card`; the scene's background is transparent.
+
+Not done
+
+- Camera presets (`camera`), day and night (`day_night`), the user's reduced-motion setting.
+- The card reads `hass` rather than subscribing to the `states` context. It costs almost nothing, because fixture states are only recomputed when an entity on the floor has changed (section 8).
 
 ## 10. Furniture catalogue
 
@@ -317,6 +328,8 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
 - The version goes in the path of the frontend's URL, not in `?v=`. Chunks import each other by relative path, which drops a query string; the browser then saw `diorama-panel.js` and `diorama-panel.js?v=...` as two modules, ran the entry twice and failed on defining its elements again. This only showed once a lazily loaded chunk (the 3D view) shared code with the entry.
 - Vertex colours are linear in three.js and in glTF. Colours in the code are written as they should look (sRGB) and converted where the geometry is handed to three.js, or by the catalogue tool. Before that, stage 4's walls and floors were paler than their colours.
+- A Lit boolean property that is true by default cannot be turned off with a `?attribute=${false}` binding: the attribute is simply absent and the default stands. The card's `interactive: false` and `controls: false` did nothing until they were bound as properties. Properties that default to true are declared `attribute: false`.
+- `getConfigElement` may be async: Home Assistant waited for the editor's code to load.
 - In a `css` tagged template an escape such as `\33 d` (a class starting with a digit) is an invalid escape: the whole stylesheet silently becomes `undefined` and the element fails to render. Typecheck, lint and tests do not catch it. Avoid class names that need escaping.
 - Home Assistant has single-key shortcuts of its own that work on any page, including a custom panel: `e`, `c`, `d`, `m` and `a` open its search and assistant. Pressing `D` for the device tool opened Home Assistant's device search over the editor. Keep Diorama's own keys off those letters.
 - `hass.entities` (the entity registry as the frontend has it) carries `area_id`, `device_id` and `hidden` among others, and firing `hass-more-info` with `{entityId}` from inside the panel opens the details dialog: both checked in a running instance.

@@ -1,6 +1,8 @@
 // The dashboard card's configuration: what users write in YAML, and the
 // checked form the card works with. No DOM here, so it tests in plain Node.
 
+import type { WallMode } from "./cutaway";
+
 export const CARD_TYPE = "diorama-card";
 
 export type CardView = "house" | "floor" | "room";
@@ -14,9 +16,12 @@ export interface CardConfig {
   controls: boolean;
   day_night: boolean;
   aspect_ratio: string;
+  /** Whether walls on the camera's side drop out of the way. */
+  walls: WallMode;
 }
 
-const VIEWS: readonly CardView[] = ["house", "floor", "room"];
+export const VIEWS: readonly CardView[] = ["house", "floor", "room"];
+export const WALL_MODES: readonly WallMode[] = ["auto", "full", "low"];
 const ASPECT_RATIO = /^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$/;
 
 export const DEFAULT_CARD_CONFIG: CardConfig = {
@@ -26,6 +31,7 @@ export const DEFAULT_CARD_CONFIG: CardConfig = {
   controls: true,
   day_night: true,
   aspect_ratio: "16:9",
+  walls: "auto",
 };
 
 /** Check a raw card configuration and fill in the defaults. Throws an Error
@@ -41,8 +47,14 @@ export function parseCardConfig(raw: unknown): CardConfig {
     throw new Error(`view must be one of: ${VIEWS.join(", ")}.`);
   }
 
+  const walls = input.walls ?? DEFAULT_CARD_CONFIG.walls;
+  if (typeof walls !== "string" || !WALL_MODES.includes(walls as WallMode)) {
+    throw new Error(`walls must be one of: ${WALL_MODES.join(", ")}.`);
+  }
+
   const config: CardConfig = {
     view: view as CardView,
+    walls: walls as WallMode,
     camera: optionalString(input, "camera") ?? DEFAULT_CARD_CONFIG.camera,
     interactive: optionalBoolean(input, "interactive") ?? DEFAULT_CARD_CONFIG.interactive,
     controls: optionalBoolean(input, "controls") ?? DEFAULT_CARD_CONFIG.controls,
@@ -92,4 +104,17 @@ function optionalBoolean(input: Record<string, unknown>, key: string): boolean |
     throw new Error(`${key} must be true or false.`);
   }
   return value;
+}
+
+/** A configuration as it should be stored: what differs from the defaults,
+ * and only the keys that mean something for the view. */
+export function tidyCardConfig(raw: Record<string, unknown>): Record<string, unknown> {
+  const config = parseCardConfig(raw);
+  const tidy: Record<string, unknown> = { type: raw.type ?? `custom:${CARD_TYPE}`, view: config.view };
+  if (config.floor) tidy.floor = config.floor;
+  if (config.room) tidy.room = config.room;
+  for (const key of ["camera", "interactive", "controls", "day_night", "aspect_ratio", "walls"] as const) {
+    if (config[key] !== DEFAULT_CARD_CONFIG[key]) tidy[key] = config[key];
+  }
+  return tidy;
 }

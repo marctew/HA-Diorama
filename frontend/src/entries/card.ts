@@ -22,6 +22,12 @@ class DioramaCard extends HTMLElement {
     return { view: "house" };
   }
 
+  /** The card's settings in the dashboard editor, fetched when first needed. */
+  static async getConfigElement(): Promise<HTMLElement> {
+    await import("../card/card-editor");
+    return document.createElement("diorama-card-editor");
+  }
+
   setConfig(raw: unknown): void {
     this._config = parseCardConfig(raw);
     this.update();

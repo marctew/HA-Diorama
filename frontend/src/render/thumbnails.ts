@@ -1,5 +1,5 @@
-// Small pictures of furniture models for the catalogue drawer, drawn with one
-// tiny renderer that is reused for all of them.
+// Small pictures of furniture models for the catalogue drawer, drawn with the
+// page's shared renderer.
 
 import {
   AmbientLight,
@@ -10,21 +10,19 @@ import {
   MeshLambertMaterial,
   OrthographicCamera,
   Scene,
-  SRGBColorSpace,
   Vector3,
-  WebGLRenderer,
 } from "three";
 import { loadModel } from "./models";
+import { sharedGl } from "./shared-gl";
 
 const SIZE = 144;
 
-let renderer: WebGLRenderer | undefined;
-let failed = false;
 const scene = new Scene();
 const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
 const material = new MeshLambertMaterial({ vertexColors: true });
 const pictures = new Map<string, Promise<string | undefined>>();
 let queue: Promise<unknown> = Promise.resolve();
+let surface: CanvasRenderingContext2D | null | undefined;
 
 scene.add(new HemisphereLight(0xffffff, 0xb8b0a4, 1.5), new AmbientLight(0xffffff, 0.3));
 const sun = new DirectionalLight(0xfff4e0, 1.6);
@@ -36,7 +34,7 @@ scene.add(sun);
 export function thumbnail(url: string): Promise<string | undefined> {
   let picture = pictures.get(url);
   if (!picture) {
-    // One at a time: they share a renderer.
+    // One at a time: they share a canvas.
     picture = queue.then(() => draw(url)).catch(() => undefined);
     queue = picture;
     pictures.set(url, picture);
@@ -45,20 +43,13 @@ export function thumbnail(url: string): Promise<string | undefined> {
 }
 
 async function draw(url: string): Promise<string | undefined> {
-  if (failed) return undefined;
   const geometry = await loadModel(url);
-  if (!renderer) {
-    try {
-      renderer = new WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    } catch {
-      failed = true;
-      return undefined;
-    }
-    renderer.outputColorSpace = SRGBColorSpace;
-    renderer.setClearColor(0x000000, 0);
-    renderer.setPixelRatio(1);
-    renderer.setSize(SIZE, SIZE, false);
+  if (surface === undefined) {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = SIZE;
+    surface = canvas.getContext("2d");
   }
+  if (!surface) return undefined;
   const mesh = new Mesh(geometry, material);
   scene.add(mesh);
   const box = geometry.boundingBox ?? new Box3().setFromObject(mesh);
@@ -73,7 +64,10 @@ async function draw(url: string): Promise<string | undefined> {
   camera.far = radius * 10;
   camera.lookAt(centre);
   camera.updateProjectionMatrix();
-  renderer.render(scene, camera);
-  scene.remove(mesh);
-  return renderer.domElement.toDataURL("image/png");
+  try {
+    sharedGl().draw(scene, camera, surface);
+  } finally {
+    scene.remove(mesh);
+  }
+  return surface.canvas.toDataURL("image/png");
 }
