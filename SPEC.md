@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 to 5 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, and furniture. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 6 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, furniture, and lights and switches bound to the scene. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -161,6 +161,8 @@ Built (stage 3)
 - Furniture tool (`F`): a drawer docked beside the plan with the catalogue by category, a search box and a picture of each piece. Pick one, then click in the plan to place it, as many times as you like; `R` turns it 15 degrees (Shift+`R` the other way) before or after placing; Esc stops. A piece that belongs against a wall (a sofa, a bed, a wardrobe) turns its back to a wall when it is brought near one and sits flat against it; Alt switches that off.
 - Furniture is selected, dragged, deleted and undone like walls, and can be selected together with them. Ctrl+D duplicates the selected pieces. Shift-drag on the background selects every corner, whole wall and piece of furniture in a box.
 - Each piece records the room it stands in, and that follows when it is moved or the walls around it change. The inspector shows its position, rotation, size and room.
+- Device tool (`B`; not `D`, which Home Assistant uses): a drawer docked beside the plan listing the lights and switches that can be placed, first those in the areas the floor's rooms are linked to, under each room's name with the ones not yet placed first, then the rest behind "show from other areas". Pick one and click where it is. Dropped on a lamp, the TV or another piece of furniture of the right kind, it attaches to it and goes where that goes; dropped on the floor, a light gets a ceiling light and a switch a marker at switch height. An entity goes on a floor once.
+- Fixtures show in the plan as round badges coloured by their live state. They are selected, dragged (which takes one off its furniture), box-selected and deleted like everything else. The inspector shows the entity, its state now, what a tap does (switch, show details, nothing), its height if it is a marker, and can detach it from its furniture.
 - Undo and redo (200 steps), Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y.
 - Saving: explicit Save (Ctrl+S) with a status. Unsaved edits are written to `localStorage` as a draft as you go and offered back after a reload or crash. If the floor is saved elsewhere meanwhile, the editor reloads when there is nothing unsaved, and otherwise offers "load their version" or "save mine over it". Leaving the page with unsaved edits asks first.
 - Lengths and areas follow Home Assistant's unit system, for display and for typed input.
@@ -170,7 +172,6 @@ Still to come
 
 - Door/window: click a wall, drag along it, edit width/height/sill in the inspector (stage 8).
 - Placing furniture by dragging it out of the drawer, and into the 3D view. For now: pick, then click in the plan.
-- Devices: a drawer listing entities grouped by the selected room's area, unplaced first. Drag one into the room to create a fixture; kind and default model are picked from the entity domain and device class. A toggle shows entities from all areas (stage 6).
 - Trace: upload a plan image, click two points and enter the real distance to set scale (stage 8).
 - Floors: add, rename, reorder, set elevation, link to a Home Assistant floor, "copy outer walls from floor below" (stage 8). Until then the panel creates one "Ground floor" and shows a plain picker if the house has more.
 
@@ -180,6 +181,8 @@ Still to come
 - The triangles are made without three.js (`core/mesh.ts`), so that part is unit tested: each wall is a solid whose corners are mitred against its neighbours, so walls tile without gaps or overlap; each face of a wall takes the wall colour of the room it looks into, and the outside colour where it looks into none; one slab per room in its floor finish's colour; no ceilings. One mesh of walls and one of slabs per floor, coloured per vertex.
 - Look: flat-shaded materials, a small fixed palette, soft sky and ambient light, one directional "sun" with a single shadow map. No physically based lighting. The background is transparent, so the page shows through.
 - Furniture: each model file is loaded once and drawn as one instanced mesh per model, whatever the number of pieces. A model the catalogue does not know, or that fails to load, is a grey box.
+- Fixtures (`render/fixture-layer.ts`): each has a marker to see and tap, on a thin stem if it has no model. Lights are faked, not simulated: one that is on gets a soft additive glow and a wash of its colour over the floor of its room, both scaled by brightness. The wash is drawn on the room's own outline, so it stops at the walls. Colour follows `rgb_color`, else colour temperature, else warm white. At high quality the four brightest lights also get a real, unshadowed point light. State changes only update colours and visibility; nothing is rebuilt.
+- Taps are matched to fixtures on screen, within 22 pixels of the fixture, so the target is 44 pixels however small it is drawn. A press that moves is a camera drag and never a tap.
 - Camera: orbit with limits, pinch and drag on touch, zoom limited to the size of the house. It frames the whole house until someone moves it, and "Reset view" frames it again. Editing the floor does not move the camera.
 - Render on demand only: a frame is drawn when the content, camera or size changes, and while the camera glides to a stop. Measured idle: no frames.
 - Quality tiers (`core/quality.ts`), picked from the device's cores, memory and whether it is a phone or tablet, overridable: low has no shadows or antialiasing and a pixel ratio of 1; medium has a 1024 shadow map and a pixel ratio up to 1.5; high a 2048 shadow map and up to 2.
@@ -187,7 +190,6 @@ Still to come
 Still to come
 
 - Cut-outs for doors and windows (stage 8).
-- Lights are faked, not simulated: an on light gets an emissive material on its model, a soft additive glow sprite, and a coloured wash on its room's floor scaled by brightness. Colour follows `rgb_color` or colour temperature. A small number of real unshadowed point lights (default 4, nearest to camera) can be enabled on capable devices (stage 6).
 - Views: `house` (all floors stacked, exploded spacing optional), `floor`, `room` (that room plus its walls, neighbours hidden or ghosted). Walls between the camera and the room fade out or drop to a low cut height. Saved camera presets per view, smooth transitions, double-tap a room to focus it (stages 7 and 8). The mesh builder already takes a maximum wall height for the cut.
 - Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
 
@@ -207,11 +209,12 @@ A binding is a small module per kind: which entities it accepts, how state maps 
 | lock | `lock.*` | padlock icon state | more-info only, never toggles on tap |
 | label | any `sensor` | floating value chip | more-info |
 
-- v1 ships `light` and `switch`. The rest follow in the order above (section 12).
-- Tap and hold follow Home Assistant's standard action config (`tap_action`, `hold_action`), overridable per fixture. Default hold is more-info, raised by firing the standard `hass-more-info` event.
-- Hit targets are padded to at least 44 px on screen regardless of model size.
-- `unavailable` and `unknown` render greyed with a small warning marker; a fixture whose entity no longer exists is flagged in the editor.
-- State updates are optimistic: show the new state at once, revert if the service call fails.
+- `light` and `switch` are built (`core/bindings.ts`); the rest follow in the order above (section 12). A fixture of a kind with no binding yet is drawn greyed and only ever opens its details.
+- Tap does the kind's action unless the fixture says otherwise (`options.tap`: `toggle`, `more-info` or `none`). Press and hold opens the details, by firing Home Assistant's `hass-more-info` event. Full `tap_action`/`hold_action` configuration is not built.
+- Hit targets are at least 44 px on screen regardless of model size.
+- `unavailable` and `unknown` render greyed, and a tap opens the details instead of toggling; a fixture whose entity no longer exists is shown the same way and flagged in the inspector.
+- State updates are optimistic: a toggle shows at once, is dropped as soon as Home Assistant's state agrees, and reverts if the call fails or nothing confirms it within three seconds.
+- `hass` is replaced on every state change in the house. Fixture visuals are recomputed only when the state object of an entity on the floor has changed (`shared/fixture-state.ts`), so unrelated changes cost nothing and draw nothing.
 
 ## 9. Dashboard card
 
@@ -315,6 +318,8 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - The version goes in the path of the frontend's URL, not in `?v=`. Chunks import each other by relative path, which drops a query string; the browser then saw `diorama-panel.js` and `diorama-panel.js?v=...` as two modules, ran the entry twice and failed on defining its elements again. This only showed once a lazily loaded chunk (the 3D view) shared code with the entry.
 - Vertex colours are linear in three.js and in glTF. Colours in the code are written as they should look (sRGB) and converted where the geometry is handed to three.js, or by the catalogue tool. Before that, stage 4's walls and floors were paler than their colours.
 - In a `css` tagged template an escape such as `\33 d` (a class starting with a digit) is an invalid escape: the whole stylesheet silently becomes `undefined` and the element fails to render. Typecheck, lint and tests do not catch it. Avoid class names that need escaping.
+- Home Assistant has single-key shortcuts of its own that work on any page, including a custom panel: `e`, `c`, `d`, `m` and `a` open its search and assistant. Pressing `D` for the device tool opened Home Assistant's device search over the editor. Keep Diorama's own keys off those letters.
+- `hass.entities` (the entity registry as the frontend has it) carries `area_id`, `device_id` and `hidden` among others, and firing `hass-more-info` with `{entityId}` from inside the panel opens the details dialog: both checked in a running instance.
 - Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
 

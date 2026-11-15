@@ -26,6 +26,8 @@ export interface HassUser {
 export interface HomeAssistant {
   states: Record<string, HassEntityState>;
   areas: Record<string, HassArea>;
+  entities?: Record<string, { area_id?: string | null; device_id?: string | null; hidden?: boolean }>;
+  devices?: Record<string, { area_id?: string | null }>;
   floors: Record<string, HassFloor>;
   user?: HassUser;
   config?: { unit_system?: { length?: string } };

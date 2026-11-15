@@ -3,7 +3,10 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { Catalogue } from "../core/catalogue";
 import { hexColour, type Colour } from "../core/mesh";
 import { deviceHints, pickQuality, type Quality } from "../core/quality";
+import type { Fixture } from "../core/scene";
+import { FixtureStates, moreInfo } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
+import type { HomeAssistant } from "../types/hass";
 import { SceneRenderer, type SceneFloor } from "./scene-renderer";
 
 /** A 3D view of one or more floors. Give it the floors; it does the rest. */
@@ -12,6 +15,10 @@ export class DioramaSceneView extends LitElement {
   @property({ attribute: false }) floors: readonly SceneFloor[] = [];
   /** Where furniture models come from. */
   @property({ attribute: false }) catalogue?: Catalogue;
+  /** For the state of the entities shown, and to act on them. */
+  @property({ attribute: false }) hass?: HomeAssistant;
+  /** Whether tapping a fixture does anything. */
+  @property({ type: Boolean }) interactive = true;
   /** A room to pick out, by id. */
   @property({ attribute: false }) highlightRoom: string | null = null;
   /** Leave unset to choose by device. */
@@ -20,6 +27,7 @@ export class DioramaSceneView extends LitElement {
   @state() private failed = false;
 
   private renderer?: SceneRenderer;
+  private readonly states = new FixtureStates(() => this.showStates());
   private resizeObserver?: ResizeObserver;
 
   override connectedCallback(): void {
@@ -31,6 +39,7 @@ export class DioramaSceneView extends LitElement {
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     this.resizeObserver?.disconnect();
+    this.states.dispose();
     this.renderer?.dispose();
     this.renderer?.canvas.remove();
     this.renderer = undefined;
@@ -65,10 +74,20 @@ export class DioramaSceneView extends LitElement {
         return;
       }
       this.renderRoot.querySelector(".canvas")!.append(this.renderer.canvas);
+      this.renderer.setCallbacks({
+        onTap: (fixture) => {
+          if (this.interactive) this.states.tap(this, this.hass, fixture);
+        },
+        onHold: (fixture) => {
+          if (this.interactive) moreInfo(this, fixture.entity_id);
+        },
+      });
       this.resize();
       this.show();
+      this.showStates();
       return;
     }
+    if (changed.has("floors") || changed.has("hass")) this.showStates();
     if (changed.has("floors") || changed.has("highlightRoom") || changed.has("catalogue")) {
       this.show();
     }
@@ -81,6 +100,13 @@ export class DioramaSceneView extends LitElement {
       highlightRoom: this.highlightRoom,
       highlightColour: this.accent(),
     });
+  }
+
+  /** Bring the fixtures into line with Home Assistant's states. Cheap when
+   * nothing they show has changed, which is nearly always. */
+  private showStates(): void {
+    const fixtures: Fixture[] = this.floors.flatMap(({ floor }) => floor.fixtures);
+    if (this.states.update(this.hass, fixtures)) this.renderer?.setVisuals(this.states.visuals);
   }
 
   private resize(): void {

@@ -29,7 +29,9 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
 import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
 import { QUALITY, type Quality } from "../core/quality";
-import type { Floor, Item } from "../core/scene";
+import type { FixtureVisual } from "../core/bindings";
+import type { Fixture, Floor, Item } from "../core/scene";
+import { FixtureLayer } from "./fixture-layer";
 import { loadedModel, loadModel } from "./models";
 import { FLOOR_COLOURS, OUTSIDE_COLOUR, WALL_TOP_COLOUR } from "./palette";
 
@@ -48,6 +50,16 @@ export interface SceneContent {
 }
 
 const FIELD_OF_VIEW = 35;
+/** Further than this, in CSS pixels, and a press is a drag, not a tap. */
+const TAP_SLOP = 6;
+const HOLD_MILLISECONDS = 500;
+
+export interface SceneCallbacks {
+  /** A fixture was tapped. */
+  onTap?(fixture: Fixture): void;
+  /** A fixture was pressed and held. */
+  onHold?(fixture: Fixture): void;
+}
 
 export class SceneRenderer {
   readonly canvas: HTMLCanvasElement;
@@ -64,6 +76,9 @@ export class SceneRenderer {
   private readonly itemMaterial = new MeshLambertMaterial({ vertexColors: true });
   private readonly unknownMaterial = new MeshLambertMaterial({ color: 0xb8bcc2 });
   private readonly unknownGeometry = new BoxGeometry(0.5, 0.5, 0.5).translate(0, 0.25, 0);
+  private readonly fixtures: FixtureLayer;
+  private callbacks: SceneCallbacks = {};
+  private press?: { x: number; y: number; fixture?: Fixture; timer: number; held: boolean };
   /** Goes up with every setContent: a model that arrives late knows whether
    * the scene it was for is still the one shown. */
   private generation = 0;
@@ -121,6 +136,24 @@ export class SceneRenderer {
     this.controls.screenSpacePanning = false;
     this.controls.addEventListener("change", this.requestRender);
     this.controls.addEventListener("start", this.onCameraMoved);
+
+    this.fixtures = new FixtureLayer(quality === "high" ? 4 : 0);
+    this.scene.add(this.fixtures.group);
+    this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    this.canvas.addEventListener("pointermove", this.onPointerMove);
+    this.canvas.addEventListener("pointerup", this.onPointerUp);
+    this.canvas.addEventListener("pointercancel", this.onPointerCancel);
+  }
+
+  /** Say what should happen when a fixture is tapped or held. */
+  setCallbacks(callbacks: SceneCallbacks): void {
+    this.callbacks = callbacks;
+  }
+
+  /** Show each fixture as its entity now is, by fixture id. */
+  setVisuals(visuals: ReadonlyMap<string, FixtureVisual>): void {
+    this.fixtures.setVisuals(visuals);
+    this.requestRender();
   }
 
   /** Replace what is shown. The camera stays where it is unless the set of
@@ -140,12 +173,27 @@ export class SceneRenderer {
       });
       this.addMesh(mesh.slabs, this.slabMaterial, elevation, false);
       this.addMesh(mesh.walls, this.wallMaterial, elevation, true);
-      this.addItems(floor.items, elevation, content.catalogue);
+      // A fixture with a model of its own is drawn like furniture.
+      const fixtureModels: Item[] = floor.fixtures
+        .filter((fixture) => fixture.item === null && fixture.model !== null)
+        .map((fixture) => ({
+          id: fixture.id,
+          model: fixture.model!,
+          x: fixture.x,
+          y: fixture.y,
+          z: fixture.z,
+          rotation: 0,
+          scale: 1,
+          room: fixture.room,
+        }));
+      this.addItems([...floor.items, ...fixtureModels], elevation, content.catalogue);
       if (mesh.bounds) {
         min.min(new Vector3(mesh.bounds.min[0], mesh.bounds.min[1] + elevation, mesh.bounds.min[2]));
         max.max(new Vector3(mesh.bounds.max[0], mesh.bounds.max[1] + elevation, mesh.bounds.max[2]));
       }
     }
+
+    this.fixtures.setFloors(content.floors, content.catalogue);
 
     const empty = !Number.isFinite(min.x);
     if (empty) {
@@ -197,6 +245,12 @@ export class SceneRenderer {
     cancelAnimationFrame(this.frameRequest);
     this.controls.removeEventListener("change", this.requestRender);
     this.controls.removeEventListener("start", this.onCameraMoved);
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
+    this.endPress();
+    this.fixtures.dispose();
     this.controls.dispose();
     this.clearHouse();
     this.itemMaterial.dispose();
@@ -338,6 +392,61 @@ export class SceneRenderer {
     this.ground.position.set(this.centre.x, -0.002, this.centre.z);
     this.camera.far = Math.max(500, reach * 30);
     this.camera.updateProjectionMatrix();
+  }
+
+  // Taps and holds on fixtures. The orbit controls see the same events: a press
+  // that does not move is no drag to them, so the two do not fight.
+
+  private pickAt(event: PointerEvent): Fixture | undefined {
+    const box = this.canvas.getBoundingClientRect();
+    return this.fixtures.pick(
+      event.clientX - box.left,
+      event.clientY - box.top,
+      box.width,
+      box.height,
+      this.camera,
+    );
+  }
+
+  private onPointerDown = (event: PointerEvent): void => {
+    this.endPress();
+    if (event.button !== 0) return;
+    const fixture = this.pickAt(event);
+    const press = {
+      x: event.clientX,
+      y: event.clientY,
+      fixture,
+      held: false,
+      timer: window.setTimeout(() => {
+        if (this.press !== press || !fixture) return;
+        press.held = true;
+        this.callbacks.onHold?.(fixture);
+      }, HOLD_MILLISECONDS),
+    };
+    this.press = press;
+  };
+
+  private onPointerMove = (event: PointerEvent): void => {
+    const press = this.press;
+    if (press && Math.hypot(event.clientX - press.x, event.clientY - press.y) > TAP_SLOP) {
+      this.endPress();
+    }
+    if (event.buttons === 0) this.canvas.style.cursor = this.pickAt(event) ? "pointer" : "";
+  };
+
+  private onPointerUp = (): void => {
+    const press = this.press;
+    this.endPress();
+    if (press?.fixture && !press.held) this.callbacks.onTap?.(press.fixture);
+  };
+
+  private onPointerCancel = (): void => {
+    this.endPress();
+  };
+
+  private endPress(): void {
+    if (this.press) window.clearTimeout(this.press.timer);
+    this.press = undefined;
   }
 
   private onCameraMoved = (): void => {

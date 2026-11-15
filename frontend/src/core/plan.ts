@@ -11,6 +11,7 @@ import {
   type Point,
 } from "./geometry";
 import { newId, type MakeId } from "./ids";
+import { syncFixtures } from "./fixtures";
 import { assignItemRooms } from "./items";
 import { detectRooms } from "./rooms";
 import type { Floor, Opening, Vertex, Wall } from "./scene";
@@ -28,19 +29,13 @@ export const DEFAULT_WALL_THICKNESS = 0.1;
 export function commit(floor: Floor, makeId: MakeId = newId): Floor {
   const tidy = normalise(floor, makeId);
   const rooms = detectRooms(tidy, makeId, floor.vertices);
-  const roomIds = new Set(rooms.map((room) => room.id));
-  const itemIds = new Set(tidy.items.map((item) => item.id));
-  return {
+  // Furniture and fixtures belong to whichever room they now stand in.
+  const withRooms = {
     ...tidy,
     rooms,
-    // Furniture belongs to whichever room it now stands in.
     items: assignItemRooms({ ...tidy, rooms }).items,
-    fixtures: tidy.fixtures.map((fixture) => {
-      const room = fixture.room !== null && !roomIds.has(fixture.room) ? null : fixture.room;
-      const item = fixture.item !== null && !itemIds.has(fixture.item) ? null : fixture.item;
-      return room === fixture.room && item === fixture.item ? fixture : { ...fixture, room, item };
-    }),
   };
+  return syncFixtures(withRooms);
 }
 
 function normalise(floor: Floor, makeId: MakeId): Floor {

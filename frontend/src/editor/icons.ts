@@ -17,6 +17,8 @@ const PATHS = {
   copy: svg`<rect x="9" y="9" width="11" height="11" rx="1.5" /><path d="M5 15V5.5A1.5 1.5 0 0 1 6.5 4H15" />`,
   rotate: svg`<path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 4v5h-5" />`,
   close: svg`<path d="M6 6l12 12M18 6 6 18" />`,
+  device: svg`<path d="M9 17.5h6M10 20.5h4" /><path d="M8.2 14.5a6 6 0 1 1 7.6 0c-.5.5-.8 1-.8 1.7H9c0-.7-.3-1.2-.8-1.7z" />`,
+  unlink: svg`<path d="M9.5 14.5 14.5 9.5M8 11l-2 2a3.5 3.5 0 0 0 5 5l2-2M16 13l2-2a3.5 3.5 0 0 0-5-5l-2 2" />`,
   cube: svg`<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" />`,
 };
 

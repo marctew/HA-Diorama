@@ -72,11 +72,11 @@ describe("selection", () => {
   it("drops what the floor no longer has", () => {
     const floor = rectangle(emptyFloor(), counter(), 0, 0, 4, 3);
     const withSofa = { ...floor, items: [{ id: "i1", model: "basics/sofa_2", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: null }] };
-    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], room: floor.rooms[0].id };
+    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], fixtures: [], room: floor.rooms[0].id };
     expect(prune(kept, withSofa)).toBe(kept);
     expect(
-      prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], items: ["i1", "i9"], room: "gone" }, withSofa),
-    ).toEqual({ vertices: [floor.vertices[0].id], walls: [], items: ["i1"], room: null });
+      prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], items: ["i1", "i9"], fixtures: ["x9"], room: "gone" }, withSofa),
+    ).toEqual({ vertices: [floor.vertices[0].id], walls: [], items: ["i1"], fixtures: [], room: null });
     expect(selectionCount(kept)).toBe(3);
   });
 });

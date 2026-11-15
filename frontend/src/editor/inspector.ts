@@ -5,7 +5,9 @@ import { distance, polygonArea, polygonPerimeter } from "../core/geometry";
 import { ROTATE_STEP, updateItems } from "../core/items";
 import { commit, moveVertices, setWallLength, setWallThickness } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Floor, Item, Room } from "../core/scene";
+import { fixtureVisual, tapAction } from "../core/bindings";
+import { MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
+import type { Fixture, Floor, Item, Room } from "../core/scene";
 import {
   formatArea,
   formatLength,
@@ -57,6 +59,10 @@ export class DioramaInspector extends LitElement {
       if (room) return this.renderRoom(floor, room);
     }
     if (count > 1) return this.renderSeveral(count, selection);
+    if (selection.fixtures.length === 1) {
+      const fixture = floor.fixtures.find((candidate) => candidate.id === selection.fixtures[0]);
+      if (fixture) return this.renderFixture(floor, fixture);
+    }
     if (selection.items.length === 1) {
       const item = floor.items.find((candidate) => candidate.id === selection.items[0]);
       if (item) return this.renderItem(floor, item);
@@ -293,6 +299,93 @@ export class DioramaInspector extends LitElement {
     `;
   }
 
+  private renderFixture(floor: Floor, fixture: Fixture): TemplateResult {
+    const entity = this.hass?.states[fixture.entity_id];
+    const friendly = entity?.attributes.friendly_name;
+    const name = typeof friendly === "string" && friendly ? friendly : fixture.entity_id;
+    const visual = fixtureVisual(fixture.kind, entity);
+    const item = floor.items.find((candidate) => candidate.id === fixture.item);
+    const model = findModel(this.catalogue, item?.model ?? fixture.model ?? "");
+    const room = floor.rooms.find((candidate) => candidate.id === fixture.room);
+    const change = (patch: Partial<Fixture>) =>
+      this.edit(updateFixtures(floor, new Set([fixture.id]), () => patch));
+    const state = !entity
+      ? "Not found in Home Assistant"
+      : !visual.available
+        ? "Unavailable"
+        : visual.on
+          ? fixture.kind === "light" && visual.level < 1
+            ? `On, ${Math.round(visual.level * 100)}%`
+            : "On"
+          : "Off";
+    return html`
+      <h2>${name}</h2>
+      <p class="entity">${fixture.entity_id}</p>
+      ${entity
+        ? nothing
+        : html`<p class="help">
+            This entity no longer exists. Remove it from the plan, or leave it until it is back.
+          </p>`}
+      <label>
+        <span>When tapped</span>
+        <select
+          @change=${(event: Event) =>
+            change({ options: { ...fixture.options, tap: value(event) } })}
+        >
+          ${(
+            [
+              ["toggle", "Switch on or off"],
+              ["more-info", "Show its details"],
+              ["none", "Do nothing"],
+            ] as const
+          ).map(
+            ([id, label]) =>
+              html`<option value=${id} ?selected=${tapAction(fixture.kind, fixture.options) === id}>
+                ${label}
+              </option>`,
+          )}
+        </select>
+      </label>
+      <p class="help">Press and hold always shows its details.</p>
+      ${item || fixture.model
+        ? nothing
+        : html`<label>
+            <span>Height above the floor (m)</span>
+            <input
+              type="number"
+              min="0"
+              max="6"
+              step="0.1"
+              .value=${String(fixture.z || MARKER_HEIGHT)}
+              @change=${(event: Event) => {
+                const metres = Number(value(event));
+                if (value(event) !== "" && metres >= 0 && metres <= 6) change({ z: metres });
+              }}
+            />
+          </label>`}
+      <dl>
+        <dt>Now</dt>
+        <dd>${state}</dd>
+        <dt>Shown as</dt>
+        <dd>${item ? `The ${(model?.name ?? "furniture").toLowerCase()}` : (model?.name ?? "A marker")}</dd>
+        <dt>Room</dt>
+        <dd>${room ? room.name || "Unnamed room" : "None"}</dd>
+      </dl>
+      <div class="actions">
+        ${item
+          ? html`<button
+              class="plain"
+              title="Take it off the furniture; it gets a marker of its own"
+              @click=${() => change({ item: null, z: MARKER_HEIGHT })}
+            >
+              ${icon("unlink")} Detach
+            </button>`
+          : nothing}
+        ${this.renderDelete("Remove from plan")}
+      </div>
+    `;
+  }
+
   private renderItemActions(): TemplateResult {
     const fire = (name: string) => () => this.dispatchEvent(new CustomEvent(name));
     return html`
@@ -335,7 +428,9 @@ export class DioramaInspector extends LitElement {
       </dl>
       <h3>Drawing</h3>
       <ul class="tips">
-        <li><kbd>W</kbd> draw walls, <kbd>F</kbd> furniture, <kbd>V</kbd> select</li>
+        <li>
+          <kbd>W</kbd> walls, <kbd>F</kbd> furniture, <kbd>B</kbd> devices, <kbd>V</kbd> select
+        </li>
         <li>Click to place each corner; close the loop to make a room</li>
         <li>Type a length and press <kbd>Enter</kbd> for an exact wall</li>
         <li><kbd>Esc</kbd> or right-click ends a run of walls</li>
@@ -437,6 +532,13 @@ export class DioramaInspector extends LitElement {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 10px;
+      }
+      .entity {
+        margin: -12px 0 16px;
+        font-family: var(--ha-font-family-code, ui-monospace, monospace);
+        font-size: 12px;
+        color: var(--diorama-text-muted);
+        overflow-wrap: anywhere;
       }
       .help {
         margin: -8px 0 14px;

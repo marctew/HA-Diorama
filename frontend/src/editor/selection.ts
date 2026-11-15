@@ -1,23 +1,35 @@
 import type { Floor } from "../core/scene";
 
-/** What is selected in the plan: corners, walls and furniture together, or
- * one room. */
+/** What is selected in the plan: corners, walls, furniture and fixtures
+ * together, or one room. */
 export interface Selection {
   vertices: readonly string[];
   walls: readonly string[];
   items: readonly string[];
+  fixtures: readonly string[];
   room: string | null;
 }
 
-export const NO_SELECTION: Selection = { vertices: [], walls: [], items: [], room: null };
+export const NO_SELECTION: Selection = {
+  vertices: [],
+  walls: [],
+  items: [],
+  fixtures: [],
+  room: null,
+};
 
 export function isEmpty(selection: Selection): boolean {
   return selectionCount(selection) === 0 && selection.room === null;
 }
 
-/** How many corners, walls and pieces of furniture are selected. */
+/** How many corners, walls, pieces of furniture and fixtures are selected. */
 export function selectionCount(selection: Selection): number {
-  return selection.vertices.length + selection.walls.length + selection.items.length;
+  return (
+    selection.vertices.length +
+    selection.walls.length +
+    selection.items.length +
+    selection.fixtures.length
+  );
 }
 
 /** Drop anything from the selection that the floor no longer has. Returns the
@@ -29,6 +41,8 @@ export function prune(selection: Selection, floor: Floor): Selection {
   const vertices = selection.vertices.filter((id) => vertexIds.has(id));
   const walls = selection.walls.filter((id) => wallIds.has(id));
   const items = selection.items.filter((id) => itemIds.has(id));
+  const fixtureIds = new Set(floor.fixtures.map((fixture) => fixture.id));
+  const fixtures = selection.fixtures.filter((id) => fixtureIds.has(id));
   const room =
     selection.room !== null && floor.rooms.some((r) => r.id === selection.room)
       ? selection.room
@@ -37,11 +51,12 @@ export function prune(selection: Selection, floor: Floor): Selection {
     vertices.length === selection.vertices.length &&
     walls.length === selection.walls.length &&
     items.length === selection.items.length &&
+    fixtures.length === selection.fixtures.length &&
     room === selection.room
   ) {
     return selection;
   }
-  return { vertices, walls, items, room };
+  return { vertices, walls, items, fixtures, room };
 }
 
 /** Add an id to a list, or take it out if it is there (shift-click). */

@@ -1,6 +1,8 @@
 import { css, html, LitElement, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { MISSING, type FixtureVisual } from "../core/bindings";
 import { EMPTY_CATALOGUE, findModel, type Catalogue, type CatalogueModel } from "../core/catalogue";
+import { itemToBind, moveFixtures, placeFixture } from "../core/fixtures";
 import {
   distance,
   interiorPoint,
@@ -19,7 +21,7 @@ import {
 } from "../core/items";
 import { addWall, commit, moveVertices } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Floor, Item } from "../core/scene";
+import type { Fixture, Floor, Item } from "../core/scene";
 import { snap, type SnapResult } from "../core/snap";
 import { formatArea, formatLength, parseLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
@@ -27,18 +29,20 @@ import { icon } from "./icons";
 import { NO_SELECTION, prune, toggle, type Selection } from "./selection";
 import { fit, gridStep, scaleBarLength, toScreen, toWorld, zoomAt, type View } from "./view";
 
-export type Tool = "select" | "wall" | "furniture";
+export type Tool = "select" | "wall" | "furniture" | "device";
 
 const SNAP_PIXELS = 10;
 const VERTEX_HIT_PIXELS = 10;
 const WALL_HIT_PIXELS = 7;
+const BADGE_RADIUS = 10;
+const BADGE_HIT_PIXELS = 13;
 const DRAG_START_PIXELS = 4;
 /** Furniture this close to a wall, in pixels, turns its back to it. */
 const WALL_SNAP_PIXELS = 18;
 /** Snap to 5 cm. */
 const GRID = 0.05;
 
-type Hit = { kind: "vertex" | "wall" | "item" | "room"; id: string };
+type Hit = { kind: "vertex" | "wall" | "item" | "fixture" | "room"; id: string };
 
 type Drag =
   | { kind: "pan"; pointer: number; last: Point }
@@ -51,8 +55,10 @@ type Drag =
       vertices: Map<string, Point>;
       /** The furniture being moved, and where it started. */
       items: Map<string, Item>;
+      /** The fixtures being moved, and where they started. */
+      fixtures: Map<string, Fixture>;
       /** The thing that was grabbed: it snaps, the rest follow. */
-      anchor: { kind: "vertex" | "item"; id: string };
+      anchor: { kind: "vertex" | "item" | "fixture"; id: string };
       moved: boolean;
     };
 
@@ -70,6 +76,10 @@ export class DioramaPlanView extends LitElement {
   @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
   /** The model that a click will place, with the furniture tool. */
   @property({ attribute: false }) placing?: CatalogueModel;
+  /** What each fixture looks like now, by fixture id. */
+  @property({ attribute: false }) visuals: ReadonlyMap<string, FixtureVisual> = new Map();
+  /** The entity that a click will place, with the device tool. */
+  @property() placingEntity?: string;
   @property() units: UnitSystem = "metric";
   /** Look but do not touch: panning and zooming only. */
   @property({ type: Boolean }) readonly = false;
@@ -89,6 +99,8 @@ export class DioramaPlanView extends LitElement {
   @state() private ghost?: { point: Point; rotation: number };
   /** How the furniture being placed is turned, away from walls. */
   @state() private placeRotation = 0;
+  /** Where the entity being placed would go, and the lamp it would join. */
+  @state() private deviceGhost?: { point: Point; item?: Item };
   @state() private marquee?: { start: Point; end: Point };
   @state() private panning = false;
   @state() private spaceDown = false;
@@ -127,6 +139,9 @@ export class DioramaPlanView extends LitElement {
     if (changed.has("tool") || changed.has("placing")) {
       if (this.tool !== "furniture" || !this.placing) this.ghost = undefined;
       else if (this.lastPointer) this.updateGhost(this.lastPointer.screen, this.lastPointer);
+    }
+    if (changed.has("tool") || changed.has("placingEntity")) {
+      if (this.tool !== "device" || !this.placingEntity) this.deviceGhost = undefined;
     }
     if (changed.has("floor")) this.transient = undefined;
   }
@@ -217,9 +232,10 @@ export class DioramaPlanView extends LitElement {
               this.renderItems(floor),
               this.renderWalls(floor),
               this.renderVertices(floor),
+              this.renderFixtures(floor),
             ]
           : nothing}
-        ${this.renderGhost()} ${this.renderDrawing()} ${this.renderMarquee()}
+        ${this.renderGhost()} ${this.renderDeviceGhost()} ${this.renderDrawing()} ${this.renderMarquee()}
       </svg>
       ${this.renderScaleBar()}
       <div class="zoom" role="group" aria-label="Zoom">
@@ -240,6 +256,7 @@ export class DioramaPlanView extends LitElement {
     if (this.panning) return "panning";
     if (this.spaceDown || this.readonly) return "pannable";
     if (this.tool === "wall") return "drawing";
+    if (this.tool === "device" && this.placingEntity) return "placing";
     return this.tool === "furniture" && this.placing ? "placing" : "";
   }
 
@@ -380,7 +397,7 @@ export class DioramaPlanView extends LitElement {
   }
 
   private renderVertices(floor: Floor): TemplateResult[] {
-    if (this.readonly || this.tool === "furniture") return [];
+    if (this.readonly || this.tool === "furniture" || this.tool === "device") return [];
     const selected = new Set(this.selection.vertices);
     return floor.vertices.map((vertex) => {
       const point = toScreen(this.view, vertex);
@@ -389,6 +406,50 @@ export class DioramaPlanView extends LitElement {
         cx=${point.x} cy=${point.y} r=${selected.has(vertex.id) ? 6 : 4}
       />`;
     });
+  }
+
+  /** Each fixture as a round badge: filled with its colour when on. */
+  private renderFixtures(floor: Floor): TemplateResult[] {
+    const selected = new Set(this.selection.fixtures);
+    return floor.fixtures.map((fixture) =>
+      this.renderBadge(
+        fixture,
+        this.visuals.get(fixture.id) ?? MISSING,
+        selected.has(fixture.id) ? "selected" : "",
+      ),
+    );
+  }
+
+  private renderBadge(
+    fixture: Pick<Fixture, "x" | "y" | "kind">,
+    visual: FixtureVisual,
+    classes: string,
+  ): TemplateResult {
+    const at = toScreen(this.view, fixture);
+    const [r, g, b] = visual.colour.map((channel) => Math.round(channel * 255));
+    const state = !visual.available ? "missing" : visual.on ? "on" : "off";
+    const glyph =
+      fixture.kind === "light"
+        ? svg`<path d="M-3 1.5a4.2 4.2 0 1 1 6 0v1.7h-6zM-2 5.4h4" />`
+        : svg`<path d="M0 -5v4.5M-3.3 -2.9a4.6 4.6 0 1 0 6.6 0" />`;
+    return svg`
+      <g class="badge ${state} ${classes}" transform="translate(${at.x} ${at.y})">
+        <circle r=${BADGE_RADIUS} style=${state === "on" ? `fill: rgb(${r} ${g} ${b})` : ""} />
+        ${glyph}
+      </g>
+    `;
+  }
+
+  private renderDeviceGhost(): TemplateResult | typeof nothing {
+    const ghost = this.deviceGhost;
+    const floor = this.floor;
+    if (!ghost || !floor || !this.placingEntity || this.readonly) return nothing;
+    const kind = this.placingEntity.startsWith("light.") ? "light" : "switch";
+    const onto = ghost.item
+      ? this.renderFootprint(ghost.item, findModel(this.catalogue, ghost.item.model), "item target")
+      : nothing;
+    const at = ghost.item ? { x: ghost.item.x, y: ghost.item.y } : ghost.point;
+    return svg`${onto}${this.renderBadge({ ...at, kind }, MISSING, "ghost")}`;
   }
 
   private renderDrawing(): TemplateResult | typeof nothing {
@@ -516,10 +577,17 @@ export class DioramaPlanView extends LitElement {
       if (this.ghost) this.placeFurniture(this.ghost);
       return;
     }
+    if (this.tool === "device" && this.placingEntity) {
+      this.updateDeviceGhost(screen, event);
+      this.placeDevice();
+      return;
+    }
 
     const hit = this.hitTest(toWorld(this.view, screen));
     if (hit && hit.kind !== "room") {
-      const list = hit.kind === "vertex" ? "vertices" : hit.kind === "wall" ? "walls" : "items";
+      const list = (
+        { vertex: "vertices", wall: "walls", item: "items", fixture: "fixtures" } as const
+      )[hit.kind];
       const already = this.selection[list].includes(hit.id);
       let selection: Selection;
       if (event.shiftKey) {
@@ -570,11 +638,20 @@ export class DioramaPlanView extends LitElement {
     for (const item of floor.items) {
       if (selection.items.includes(item.id)) items.set(item.id, item);
     }
-    let anchor: { kind: "vertex" | "item"; id: string } | undefined;
-    if (hit.kind === "item" && items.has(hit.id)) anchor = { kind: "item", id: hit.id };
+    // A fixture on a lamp that is itself being dragged goes with the lamp.
+    const fixtures = new Map<string, Fixture>();
+    for (const fixture of floor.fixtures) {
+      if (!selection.fixtures.includes(fixture.id)) continue;
+      if (fixture.item !== null && items.has(fixture.item)) continue;
+      fixtures.set(fixture.id, fixture);
+    }
+    let anchor: { kind: "vertex" | "item" | "fixture"; id: string } | undefined;
+    if (hit.kind === "fixture" && fixtures.has(hit.id)) anchor = { kind: "fixture", id: hit.id };
+    else if (hit.kind === "item" && items.has(hit.id)) anchor = { kind: "item", id: hit.id };
     else if (hit.kind === "vertex" && vertices.has(hit.id)) anchor = { kind: "vertex", id: hit.id };
     else if (vertices.size > 0) anchor = { kind: "vertex", id: [...vertices.keys()][0] };
     else if (items.size > 0) anchor = { kind: "item", id: [...items.keys()][0] };
+    else if (fixtures.size > 0) anchor = { kind: "fixture", id: [...fixtures.keys()][0] };
     if (!anchor) return;
     element.setPointerCapture(event.pointerId);
     this.drag = {
@@ -583,6 +660,7 @@ export class DioramaPlanView extends LitElement {
       start: screen,
       vertices,
       items,
+      fixtures,
       anchor,
       moved: false,
     };
@@ -617,6 +695,7 @@ export class DioramaPlanView extends LitElement {
     if (this.readonly) return;
     this.target = this.tool === "wall" ? this.snapAt(screen, event) : undefined;
     if (this.tool === "furniture" && this.placing) this.updateGhost(screen, event);
+    if (this.tool === "device" && this.placingEntity) this.updateDeviceGhost(screen, event);
   }
 
   /** Move what is being dragged. The thing that was grabbed snaps; the rest
@@ -638,6 +717,13 @@ export class DioramaPlanView extends LitElement {
       dx = result.point.x - origin.x;
       dy = result.point.y - origin.y;
       this.target = result;
+    } else if (drag.anchor.kind === "fixture") {
+      const origin = drag.fixtures.get(drag.anchor.id)!;
+      const wanted = toScreen(this.view, origin);
+      const world = toWorld(this.view, { x: wanted.x + offset.x, y: wanted.y + offset.y });
+      const to = event.altKey ? world : { x: roundTo(world.x, GRID), y: roundTo(world.y, GRID) };
+      dx = to.x - origin.x;
+      dy = to.y - origin.y;
     } else {
       const origin = drag.items.get(drag.anchor.id)!;
       const wanted = toScreen(this.view, origin);
@@ -665,6 +751,13 @@ export class DioramaPlanView extends LitElement {
           ),
         };
       }
+    }
+    if (drag.fixtures.size > 0) {
+      const places = new Map<string, Point>();
+      for (const [id, origin] of drag.fixtures) {
+        places.set(id, { x: origin.x + dx, y: origin.y + dy });
+      }
+      moved = moveFixtures(moved, places);
     }
     this.transient = moved;
   }
@@ -694,6 +787,7 @@ export class DioramaPlanView extends LitElement {
     if (this.drag) return;
     if (!this.chain) this.target = undefined;
     this.ghost = undefined;
+    this.deviceGhost = undefined;
     this.lastPointer = undefined;
   }
 
@@ -775,6 +869,32 @@ export class DioramaPlanView extends LitElement {
     // Not selected: the next click places another.
   }
 
+  // Devices.
+
+  private updateDeviceGhost(screen: Point, event: { altKey: boolean }): void {
+    const floor = this.floor;
+    if (!floor || !this.placingEntity) return;
+    const world = toWorld(this.view, screen);
+    const kind = this.placingEntity.startsWith("light.") ? "light" : "switch";
+    const item = itemToBind(floor, this.catalogue, kind, world);
+    const point = event.altKey ? world : { x: roundTo(world.x, GRID), y: roundTo(world.y, GRID) };
+    this.deviceGhost = { point, item };
+  }
+
+  private placeDevice(): void {
+    const floor = this.floor;
+    const ghost = this.deviceGhost;
+    if (!floor || !ghost || !this.placingEntity) return;
+    // Aim at the lamp itself when joining one, so placeFixture finds it.
+    const at = ghost.item ? { x: ghost.item.x, y: ghost.item.y } : ghost.point;
+    const placed = placeFixture(floor, this.catalogue, this.placingEntity, at);
+    if (!placed.id) return;
+    this.deviceGhost = undefined;
+    this.dispatchEvent(
+      new CustomEvent("plan-edit", { detail: { floor: placed.floor, placedFixture: placed.id } }),
+    );
+  }
+
   // Hit testing.
 
   private hitTest(world: Point): Hit | undefined {
@@ -788,6 +908,14 @@ export class DioramaPlanView extends LitElement {
       }
     }
     if (best) return { kind: "vertex", id: best.id };
+
+    for (const fixture of floor.fixtures) {
+      const d = distance(fixture, world);
+      if (d <= BADGE_HIT_PIXELS / this.view.scale && (!best || d < best.distance)) {
+        best = { id: fixture.id, distance: d };
+      }
+    }
+    if (best) return { kind: "fixture", id: best.id };
 
     const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
     for (const wall of floor.walls) {
@@ -847,6 +975,7 @@ export class DioramaPlanView extends LitElement {
         .filter((wall) => within.has(wall.a) && within.has(wall.b))
         .map((wall) => wall.id),
       items: floor.items.filter(inside).map((item) => item.id),
+      fixtures: floor.fixtures.filter(inside).map((fixture) => fixture.id),
       room: null,
     });
   }
@@ -965,6 +1094,54 @@ export class DioramaPlanView extends LitElement {
         fill: color-mix(in srgb, var(--diorama-accent) 18%, transparent);
         stroke: var(--diorama-accent);
         stroke-dasharray: 5 4;
+      }
+      .item.target polygon {
+        fill: color-mix(in srgb, var(--diorama-accent) 30%, transparent);
+        stroke: var(--diorama-accent);
+        stroke-width: 2;
+      }
+      .item.target {
+        pointer-events: none;
+      }
+      .badge circle {
+        fill: color-mix(in srgb, var(--diorama-text) 45%, var(--halo));
+        stroke: var(--halo);
+        stroke-width: 2;
+      }
+      .badge path {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .badge.on path {
+        stroke: rgba(0, 0, 0, 0.72);
+      }
+      .badge.missing circle {
+        fill: var(--halo);
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+        stroke-dasharray: 3 2.5;
+        stroke-width: 1.5;
+      }
+      .badge.missing path {
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+      }
+      .badge.selected circle {
+        stroke: var(--diorama-accent);
+        stroke-width: 3;
+      }
+      .badge.ghost {
+        pointer-events: none;
+        opacity: 0.9;
+      }
+      .badge.ghost circle {
+        fill: var(--diorama-accent);
+        stroke: var(--halo);
+        stroke-dasharray: none;
+      }
+      .badge.ghost path {
+        stroke: #fff;
       }
       .wall {
         stroke: color-mix(in srgb, var(--diorama-text) 82%, transparent);

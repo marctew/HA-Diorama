@@ -12,6 +12,7 @@ import {
   type Point,
 } from "./geometry";
 import { newId, type MakeId } from "./ids";
+import { syncFixtures } from "./fixtures";
 import { roomPolygon } from "./rooms";
 import type { Floor, Item } from "./scene";
 
@@ -103,7 +104,7 @@ export function updateItems(
     changed = true;
     return next;
   });
-  return changed ? { ...floor, items } : floor;
+  return changed ? syncFixtures({ ...floor, items }) : floor;
 }
 
 export function moveItems(floor: Floor, positions: ReadonlyMap<string, Point>): Floor {

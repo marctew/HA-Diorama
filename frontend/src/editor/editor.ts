@@ -4,14 +4,18 @@ import { DioramaApi, errorMessage, isConflict } from "../core/api";
 import { browserStorage, clearDraft, loadDraft, saveDraft, type Draft } from "../core/draft";
 import { History } from "../core/history";
 import { EMPTY_CATALOGUE, type Catalogue, type CatalogueModel } from "../core/catalogue";
+import type { FixtureVisual } from "../core/bindings";
+import { deleteFixtures } from "../core/fixtures";
 import { deleteItems, duplicateItems, rotateItems, ROTATE_STEP } from "../core/items";
 import { deleteVertices, deleteWalls } from "../core/plan";
 import type { Floor, SceneEvent } from "../core/scene";
 import type { UnitSystem } from "../core/units";
+import { FixtureStates } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
 import "./catalogue-drawer";
+import "./device-drawer";
 import "./inspector";
 import "./plan-view";
 import type { DioramaPlanView, Tool } from "./plan-view";
@@ -55,6 +59,10 @@ export class DioramaEditor extends LitElement {
   @state() private catalogue: Catalogue = EMPTY_CATALOGUE;
   /** The piece of furniture the next click in the plan will place. */
   @state() private placing?: CatalogueModel;
+  /** The entity the next click in the plan will place. */
+  @state() private placingEntity?: string;
+  /** What each fixture looks like now, for the badges in the plan. */
+  @state() private visuals: ReadonlyMap<string, FixtureVisual> = new Map();
   @state() private viewMode: ViewMode = "split";
   /** The 3D view's code has arrived. It is only fetched when first shown. */
   @state() private sceneLoaded = false;
@@ -72,6 +80,7 @@ export class DioramaEditor extends LitElement {
   private unsubscribe?: () => Promise<void> | void;
   private draftTimer?: ReturnType<typeof setTimeout>;
   private readonly storage = browserStorage();
+  private readonly fixtureStates = new FixtureStates(() => this.requestUpdate());
 
   private get api(): DioramaApi | undefined {
     return this.hass ? new DioramaApi(this.hass) : undefined;
@@ -107,6 +116,7 @@ export class DioramaEditor extends LitElement {
     window.removeEventListener("keyup", this.onKeyUp);
     window.removeEventListener("beforeunload", this.onBeforeUnload);
     this.flushDraft();
+    this.fixtureStates.dispose();
     const unsubscribe = this.unsubscribe;
     this.unsubscribe = undefined;
     this.loadedId = undefined;
@@ -116,6 +126,9 @@ export class DioramaEditor extends LitElement {
   protected override willUpdate(changed: PropertyValues<this>): void {
     if ((changed.has("hass") || changed.has("floorId")) && this.hass && this.floorId) {
       if (this.loadedId !== this.floorId) void this.load(this.floorId);
+    }
+    if (this.fixtureStates.update(this.hass, this.floor?.fixtures ?? [])) {
+      this.visuals = this.fixtureStates.visuals;
     }
     if ((changed as Map<PropertyKey, unknown>).has("floor")) {
       this.sceneFloors = this.floor ? [{ floor: this.floor, elevation: 0 }] : [];
@@ -263,7 +276,8 @@ export class DioramaEditor extends LitElement {
   private deleteSelection(): void {
     const floor = this.floor;
     if (!floor || isEmpty(this.selection)) return;
-    let result = deleteItems(floor, new Set(this.selection.items));
+    let result = deleteFixtures(floor, new Set(this.selection.fixtures));
+    result = deleteItems(result, new Set(this.selection.items));
     result = deleteWalls(result, new Set(this.selection.walls));
     result = deleteVertices(result, new Set(this.selection.vertices));
     this.applyEdit(result);
@@ -286,6 +300,7 @@ export class DioramaEditor extends LitElement {
     this.tool = tool;
     if (tool !== "select") this.selection = NO_SELECTION;
     if (tool !== "furniture") this.placing = undefined;
+    if (tool !== "device") this.placingEntity = undefined;
   }
 
   // Drafts.
@@ -354,6 +369,7 @@ export class DioramaEditor extends LitElement {
     if (key === "Escape") {
       if (this.plan?.cancel()) return;
       if (this.placing) this.placing = undefined;
+      else if (this.placingEntity) this.placingEntity = undefined;
       else if (this.tool !== "select") this.setTool("select");
       else this.selection = NO_SELECTION;
     } else if (key.toLowerCase() === "r") {
@@ -361,6 +377,9 @@ export class DioramaEditor extends LitElement {
       if (!this.plan?.rotatePlacing(step)) this.rotateSelection(step);
     } else if (key.toLowerCase() === "f" && !this.plan?.drawing) {
       this.setTool("furniture");
+    } else if (key.toLowerCase() === "b" && !this.plan?.drawing) {
+      // Not D: Home Assistant opens its own device search on D.
+      this.setTool("device");
     } else if (key === "Delete" || key === "Backspace") {
       event.preventDefault();
       this.deleteSelection();
@@ -407,9 +426,14 @@ export class DioramaEditor extends LitElement {
             .selection=${this.selection}
             .catalogue=${this.catalogue}
             .placing=${this.placing}
+            .visuals=${this.visuals}
+            .placingEntity=${this.placingEntity}
             .units=${this.units}
-            @plan-edit=${(event: CustomEvent<{ floor: Floor }>) =>
-              this.applyEdit(event.detail.floor)}
+            @plan-edit=${(event: CustomEvent<{ floor: Floor; placedFixture?: string }>) => {
+              this.applyEdit(event.detail.floor);
+              // A device goes on the floor once: the next pick is another one.
+              if (event.detail.placedFixture) this.placingEntity = undefined;
+            }}
             @plan-select=${(event: CustomEvent<{ selection: Selection }>) =>
               (this.selection = event.detail.selection)}
           ></diorama-plan-view>
@@ -446,6 +470,7 @@ export class DioramaEditor extends LitElement {
     return html`<diorama-scene-view
       .floors=${this.sceneFloors}
       .catalogue=${this.catalogue}
+      .hass=${this.hass}
       .highlightRoom=${this.selection.room}
     ></diorama-scene-view>`;
   }
@@ -478,7 +503,7 @@ export class DioramaEditor extends LitElement {
         ${this.mode === "3d"
           ? nothing
           : html`${tool("select", "Select and move", "V")} ${tool("wall", "Draw walls", "W")}
-              ${tool("furniture", "Add furniture", "F")}
+              ${tool("furniture", "Add furniture", "F")} ${tool("device", "Place devices", "B")}
               <span class="divider"></span>`}
         <button
           title="Undo (Ctrl+Z)"
@@ -505,7 +530,20 @@ export class DioramaEditor extends LitElement {
 
   /** The furniture list, docked beside the plan so that it covers none of it. */
   private renderDrawer(): TemplateResult | typeof nothing {
-    if (this.narrow || this.tool !== "furniture") return nothing;
+    if (this.narrow) return nothing;
+    if (this.tool === "device") {
+      return html`<div class="dock">
+        <diorama-device-drawer
+          .hass=${this.hass}
+          .floor=${this.floor}
+          .picked=${this.placingEntity}
+          @device-pick=${(event: CustomEvent<{ entityId?: string }>) =>
+            (this.placingEntity = event.detail.entityId)}
+          @device-close=${() => this.setTool("select")}
+        ></diorama-device-drawer>
+      </div>`;
+    }
+    if (this.tool !== "furniture") return nothing;
     return html`<div class="dock">
       <diorama-catalogue-drawer
         .catalogue=${this.catalogue}
@@ -520,7 +558,7 @@ export class DioramaEditor extends LitElement {
 
   /** What sits over the plan itself: the nudge to start, and the tool's hint. */
   private renderPlanOverlays(): TemplateResult | typeof nothing {
-    if (this.narrow || this.tool === "furniture") return nothing;
+    if (this.narrow || this.tool === "furniture" || this.tool === "device") return nothing;
     if (this.floor && this.floor.walls.length === 0 && this.tool === "select") {
       return html`
         <div class="start">
@@ -785,7 +823,8 @@ export class DioramaEditor extends LitElement {
         /* Clear of the toolbar above. */
         padding: 76px 8px 16px 16px;
       }
-      diorama-catalogue-drawer {
+      diorama-catalogue-drawer,
+      diorama-device-drawer {
         flex: 1;
         min-width: 0;
       }
