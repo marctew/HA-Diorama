@@ -11,6 +11,9 @@ const PATHS = {
   trash: svg`<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" />`,
   check: svg`<path d="m5 12 5 5 9-10" />`,
   menu: svg`<path d="M3 6h18M3 12h18M3 18h18" />`,
+  plan: svg`<rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M4 13h9V4M13 13v7" />`,
+  split: svg`<rect x="3" y="5" width="18" height="14" rx="1.5" /><path d="M12 5v14" />`,
+  cube: svg`<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" />`,
 };
 
 export type IconName = keyof typeof PATHS;

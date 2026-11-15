@@ -2,7 +2,7 @@
 
 Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
 
-> **Early days.** You can draw the walls and rooms of a floor from above and link rooms to Home Assistant areas. There is no 3D view, furniture or device placement yet, and the dashboard card only shows a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
+> **Early days.** You can draw the walls and rooms of a floor from above, see them in 3D beside the plan as you draw, and link rooms to Home Assistant areas. There is no furniture or device placement yet, and the dashboard card only shows a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
 
 ## Install
 

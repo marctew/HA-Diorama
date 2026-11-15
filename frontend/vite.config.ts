@@ -21,6 +21,8 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     sourcemap: false,
+    // three.js is one big chunk, fetched only when a 3D view is shown.
+    chunkSizeWarningLimit: 700,
     rollupOptions: {
       input: {
         "diorama-card": resolve(here, "src/entries/card.ts"),

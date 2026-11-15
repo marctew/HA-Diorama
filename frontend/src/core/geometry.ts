@@ -138,3 +138,51 @@ export function interiorPoint(points: readonly Point[]): Point {
   }
   return best;
 }
+
+/** Cut a polygon without holes into triangles, by clipping ears. Returns
+ * indices into `points`, three per triangle, each triangle turning the same
+ * way as a polygon of positive `signedArea`. */
+export function triangulate(points: readonly Point[]): number[] {
+  const count = points.length;
+  if (count < 3) return [];
+  const order = Array.from({ length: count }, (_, i) => i);
+  if (signedArea(points) < 0) order.reverse();
+
+  const cross = (a: Point, b: Point, c: Point) =>
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const inside = (p: Point, a: Point, b: Point, c: Point) =>
+    cross(a, b, p) >= 0 && cross(b, c, p) >= 0 && cross(c, a, p) >= 0;
+
+  const triangles: number[] = [];
+  let guard = count * count;
+  while (order.length > 3 && guard-- > 0) {
+    let clipped = false;
+    for (let i = 0; i < order.length; i++) {
+      const before = order[(i + order.length - 1) % order.length];
+      const here = order[i];
+      const after = order[(i + 1) % order.length];
+      const a = points[before];
+      const b = points[here];
+      const c = points[after];
+      if (cross(a, b, c) <= 1e-12) continue; // a reflex or flat corner is no ear
+      const blocked = order.some(
+        (other) =>
+          other !== before &&
+          other !== here &&
+          other !== after &&
+          inside(points[other], a, b, c),
+      );
+      if (blocked) continue;
+      triangles.push(before, here, after);
+      order.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) {
+      // Only flat corners are left (or the outline crosses itself): drop one.
+      order.splice(0, 1);
+    }
+  }
+  if (order.length === 3) triangles.push(order[0], order[1], order[2]);
+  return triangles;
+}

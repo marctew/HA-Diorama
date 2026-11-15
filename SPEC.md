@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 to 3 are built: the skeleton, storage and the WebSocket API, and the plan editor for walls and rooms. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 4 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, and the 3D renderer with its preview in the editor. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -74,11 +74,11 @@ Setup
 
 - Config flow, single instance, no options to enter. Adding the integration creates an empty house.
 - On setup:
-  - Serve `frontend/dist` and `assets` with `hass.http.async_register_static_paths([StaticPathConfig(...)])` under `/diorama_static/`. These are public, unauthenticated files, like everything in `www`, so nothing user-specific goes there.
+  - Serve `frontend/dist` and `assets` with `hass.http.async_register_static_paths([StaticPathConfig(...)])` under `/diorama_static/<version>/`. These are public, unauthenticated files, like everything in `www`, so nothing user-specific goes there.
   - Register the panel with `panel_custom.async_register_panel(hass, frontend_url_path="diorama", webcomponent_name="diorama-panel", module_url=..., sidebar_title="Diorama", sidebar_icon=..., require_admin=True)`.
   - Register the card loader with `frontend.add_extra_js_url(hass, url)`. Diorama is published as an integration, not a dashboard plugin, so the Marketplace does not add a dashboard resource for it; the integration loads its own card.
   - Register the WebSocket commands.
-  - Put the integration version in every asset URL (`?v=<version>`) for cache busting.
+  - Put the integration version in the path of every asset URL (`/diorama_static/<version>/...`) for cache busting. Not in a query string: see section 14.
 - `manifest.json`: `domain`, `name`, `version` (same as the release tag; the Marketplace refuses an install without it), `documentation`, `issue_tracker`, `codeowners`, `config_flow: true`, `dependencies: ["http", "frontend", "panel_custom", "websocket_api"]`, `categories` (one to three, from the integration categories list), no `requirements` unless needed.
 - The panel owns its whole page: it draws its own header and the button that opens the sidebar on narrow screens, and uses the `narrow` and `route` properties it is given.
 
@@ -148,7 +148,7 @@ Units are metres and degrees. Plan coordinates are `x` (east) and `y` (south) on
 
 ## 6. Editor (panel)
 
-Layout: plan view (2D, SVG) as the main working surface, floating tool and save bars over it, a right inspector for the selection. A live 3D preview you can toggle or split comes with stage 4, the floor switcher with stage 8.
+Layout: plan view (2D, SVG) as the main working surface, floating tool and save bars over it, a right inspector for the selection, and a live 3D preview: plan only, side by side (the default) or 3D only, remembered per browser. The preview follows every edit and picks out the selected room. On a narrow screen only the 3D view is shown. The floor switcher comes with stage 8.
 
 Built (stage 3)
 
@@ -161,7 +161,7 @@ Built (stage 3)
 - Undo and redo (200 steps), Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y.
 - Saving: explicit Save (Ctrl+S) with a status. Unsaved edits are written to `localStorage` as a draft as you go and offered back after a reload or crash. If the floor is saved elsewhere meanwhile, the editor reloads when there is nothing unsaved, and otherwise offers "load their version" or "save mine over it". Leaving the page with unsaved edits asks first.
 - Lengths and areas follow Home Assistant's unit system, for display and for typed input.
-- On a narrow screen the plan can be panned and zoomed but not edited.
+- On a narrow screen the editor shows the 3D view only: look, do not edit.
 
 Still to come
 
@@ -174,15 +174,19 @@ Still to come
 
 ## 7. Renderer
 
-- One renderer class used by the panel preview and the card. Input: floor documents, catalogue, a view definition, and `hass`.
-- Geometry: walls extruded from the graph with mitred joins and cut-outs for openings; one floor slab per room; no ceilings. Merge static geometry per floor; instance repeated models.
-- Look: flat or toon-shaded materials, a small fixed palette, soft ambient light, one directional "sun" with a single shadow map. No physically based lighting.
-- Lights are faked, not simulated: an on light gets an emissive material on its model, a soft additive glow sprite, and a coloured wash on its room's floor scaled by brightness. Colour follows `rgb_color` or colour temperature. A small number of real unshadowed point lights (default 4, nearest to camera) can be enabled on capable devices.
-- Views: `house` (all floors stacked, exploded spacing optional), `floor`, `room` (that room plus its walls, neighbours hidden or ghosted). Walls between the camera and the room fade out or drop to a low cut height.
-- Camera: orbit with limits, pinch and drag on touch, saved presets per view, smooth transitions. Double-tap a room to focus it.
-- Day and night: ambient level and sun angle follow `sun.sun`; can be turned off.
-- Render on demand only: draw when state, camera or size changes, then stop. No continuous animation loop except during a transition.
-- Quality tiers (auto-detected, overridable): low disables shadows, glow sprites become flat, pixel ratio capped at 1; high enables shadows and point lights.
+- One renderer class (`render/scene-renderer.ts`) used by the panel preview and, from stage 7, the card. Input: floor documents with their elevations, and what to highlight. three.js and the renderer are in a chunk of their own, fetched the first time a 3D view is shown.
+- The triangles are made without three.js (`core/mesh.ts`), so that part is unit tested: each wall is a solid whose corners are mitred against its neighbours, so walls tile without gaps or overlap; each face of a wall takes the wall colour of the room it looks into, and the outside colour where it looks into none; one slab per room in its floor finish's colour; no ceilings. One mesh of walls and one of slabs per floor, coloured per vertex.
+- Look: flat-shaded materials, a small fixed palette, soft sky and ambient light, one directional "sun" with a single shadow map. No physically based lighting. The background is transparent, so the page shows through.
+- Camera: orbit with limits, pinch and drag on touch, zoom limited to the size of the house. It frames the whole house until someone moves it, and "Reset view" frames it again. Editing the floor does not move the camera.
+- Render on demand only: a frame is drawn when the content, camera or size changes, and while the camera glides to a stop. Measured idle: no frames.
+- Quality tiers (`core/quality.ts`), picked from the device's cores, memory and whether it is a phone or tablet, overridable: low has no shadows or antialiasing and a pixel ratio of 1; medium has a 1024 shadow map and a pixel ratio up to 1.5; high a 2048 shadow map and up to 2.
+
+Still to come
+
+- Cut-outs for doors and windows (stage 8). Furniture, instanced (stage 5).
+- Lights are faked, not simulated: an on light gets an emissive material on its model, a soft additive glow sprite, and a coloured wash on its room's floor scaled by brightness. Colour follows `rgb_color` or colour temperature. A small number of real unshadowed point lights (default 4, nearest to camera) can be enabled on capable devices (stage 6).
+- Views: `house` (all floors stacked, exploded spacing optional), `floor`, `room` (that room plus its walls, neighbours hidden or ghosted). Walls between the camera and the room fade out or drop to a low cut height. Saved camera presets per view, smooth transitions, double-tap a room to focus it (stages 7 and 8). The mesh builder already takes a maximum wall height for the cut.
+- Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
 
 ## 8. Entity bindings
 
@@ -241,7 +245,7 @@ aspect_ratio: "16:9"
 
 - Backend: pytest with `pytest-homeassistant-custom-component`. Cover config flow, every WebSocket command (including permissions and the revision conflict), schema validation, storage migration, upload validation.
 - Frontend: vitest for `core/` (wall graph edits, room detection and identity matching, opening placement, unit conversion) and for each binding's state-to-visual mapping. `core/` has no three.js or DOM dependency so it tests in plain Node.
-- One Playwright smoke test that loads a fixture house in the renderer and compares a screenshot.
+- One Playwright smoke test that loads a fixture house in the renderer and compares a screenshot. Not written yet: the renderer has so far been checked by hand in a real Home Assistant (does it draw, does the camera move, does it stop drawing when idle).
 - CI on every push and pull request: ruff, pytest, tsc, eslint, vitest, the `hassfest` action, and the HACS action (`hacs/action`) with `category: "integration"`, with no checks ignored. Both must pass for the catalogue.
 - Releases: a published GitHub release (a tag alone is not enough) built by a GitHub Action, which attaches `diorama.zip` holding the contents of `custom_components/diorama` with the built `frontend/dist` inside. Built files are not committed to `main`. The tag, `manifest.json` `version` and the frontend cache-busting version are the same string. Release notes are what users see on the update entity, so breaking changes go at the top.
 - `hacs.json`: `{"name": "Diorama", "zip_release": true, "filename": "diorama.zip", "homeassistant": "2026.11.0"}`.
@@ -297,6 +301,8 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - The Vite build needs `base: "./"`, or the preload of lazy chunks asks for them at the site root and gets a 404.
 - None of the integration categories fits a dashboard tool, so the manifest has no `categories`. The HACS action reports that as a warning, not a failure.
 - In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
+- The version goes in the path of the frontend's URL, not in `?v=`. Chunks import each other by relative path, which drops a query string; the browser then saw `diorama-panel.js` and `diorama-panel.js?v=...` as two modules, ran the entry twice and failed on defining its elements again. This only showed once a lazily loaded chunk (the 3D view) shared code with the entry.
+- In a `css` tagged template an escape such as `\33 d` (a class starting with a digit) is an invalid escape: the whole stylesheet silently becomes `undefined` and the element fails to render. Typecheck, lint and tests do not catch it. Avoid class names that need escaping.
 - Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
 

@@ -9,11 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 import pytest
 
-from custom_components.diorama import versioned_url
+from custom_components.diorama import frontend_url, versioned_url
 from custom_components.diorama.const import (
     CARD_FILE,
     DOMAIN,
-    FRONTEND_URL,
     PANEL_ELEMENT,
     PANEL_FILE,
     PANEL_URL_PATH,
@@ -56,14 +55,23 @@ async def test_frontend_files_are_served(
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
+    version = await _version(hass)
     client = await hass_client_no_auth()
     for filename, body in ((CARD_FILE, "// card"), (PANEL_FILE, "// panel")):
-        response = await client.get(f"{FRONTEND_URL}/{filename}?v=1")
+        response = await client.get(versioned_url(filename, version))
         assert response.status == HTTPStatus.OK
         assert await response.text() == body
 
-    response = await client.get(f"{FRONTEND_URL}/missing.js")
+    response = await client.get(f"{frontend_url(version)}/missing.js")
     assert response.status == HTTPStatus.NOT_FOUND
+
+
+async def test_frontend_urls_carry_the_version_in_the_path(hass: HomeAssistant) -> None:
+    # A query string would be dropped when one file imports another by
+    # relative path, and the entry file would then be run twice.
+    url = versioned_url(PANEL_FILE, "1.2.3")
+    assert url == "/diorama_static/1.2.3/diorama-panel.js"
+    assert "?" not in url
 
 
 async def test_unload_removes_panel_and_card(

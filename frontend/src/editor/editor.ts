@@ -13,6 +13,12 @@ import "./inspector";
 import "./plan-view";
 import type { DioramaPlanView, Tool } from "./plan-view";
 import { isEmpty, NO_SELECTION, prune, type Selection } from "./selection";
+import type { SceneFloor } from "../render/scene-renderer";
+
+/** What the editor shows: the plan, the 3D model, or both side by side. */
+export type ViewMode = "plan" | "split" | "3d";
+
+const VIEW_MODE_KEY = "diorama.editor.view";
 
 const DRAFT_DELAY = 400;
 
@@ -43,6 +49,13 @@ export class DioramaEditor extends LitElement {
   @state() private conflict = false;
   /** Unsaved edits found from an earlier visit. */
   @state() private draftOffer?: Draft;
+  @state() private viewMode: ViewMode = "split";
+  /** The 3D view's code has arrived. It is only fetched when first shown. */
+  @state() private sceneLoaded = false;
+  @state() private sceneFailed = false;
+
+  /** The floor as the 3D view wants it; the same array until the floor changes. */
+  private sceneFloors: readonly SceneFloor[] = [];
 
   @query("diorama-plan-view") private plan?: DioramaPlanView;
 
@@ -62,12 +75,21 @@ export class DioramaEditor extends LitElement {
     return this.hass?.config?.unit_system?.length === "mi" ? "imperial" : "metric";
   }
 
+  /** A narrow screen has no room for the plan's tools: show the model. */
+  private get mode(): ViewMode {
+    return this.narrow ? "3d" : this.viewMode;
+  }
+
   private get dirty(): boolean {
     return this.floor !== undefined && this.floor !== this.savedState;
   }
 
   override connectedCallback(): void {
     super.connectedCallback();
+    const remembered = readSetting(this.storage, VIEW_MODE_KEY);
+    if (remembered === "plan" || remembered === "split" || remembered === "3d") {
+      this.viewMode = remembered;
+    }
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("beforeunload", this.onBeforeUnload);
@@ -89,6 +111,32 @@ export class DioramaEditor extends LitElement {
     if ((changed.has("hass") || changed.has("floorId")) && this.hass && this.floorId) {
       if (this.loadedId !== this.floorId) void this.load(this.floorId);
     }
+    if ((changed as Map<PropertyKey, unknown>).has("floor")) {
+      this.sceneFloors = this.floor ? [{ floor: this.floor, elevation: 0 }] : [];
+    }
+    if (this.mode !== "plan" && !this.sceneLoaded && !this.sceneFailed) void this.loadScene();
+  }
+
+  private sceneLoading = false;
+
+  private async loadScene(): Promise<void> {
+    if (this.sceneLoading) return;
+    this.sceneLoading = true;
+    try {
+      await import("../render/scene-view");
+      this.sceneLoaded = true;
+    } catch (error) {
+      console.error("Diorama: the 3D view could not be loaded", error);
+      this.sceneFailed = true;
+    } finally {
+      this.sceneLoading = false;
+    }
+  }
+
+  private setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    writeSetting(this.storage, VIEW_MODE_KEY, mode);
+    if (mode === "3d") this.tool = "select";
   }
 
   // Loading and saving.
@@ -248,6 +296,7 @@ export class DioramaEditor extends LitElement {
   // Keyboard.
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (this.mode === "3d" && !(event.ctrlKey || event.metaKey)) return;
     if (this.narrow || !this.floor || isTyping(event)) return;
     const command = event.ctrlKey || event.metaKey;
     const key = event.key;
@@ -311,18 +360,23 @@ export class DioramaEditor extends LitElement {
       `;
     }
     if (!this.floor) return html`<div class="message"><p>Loading the floor...</p></div>`;
+    const mode = this.mode;
     return html`
-      <div class="stage">
-        <diorama-plan-view
-          .floor=${this.floor}
-          .tool=${this.tool}
-          .selection=${this.selection}
-          .units=${this.units}
-          ?readonly=${this.narrow}
-          @plan-edit=${(event: CustomEvent<{ floor: Floor }>) => this.applyEdit(event.detail.floor)}
-          @plan-select=${(event: CustomEvent<{ selection: Selection }>) =>
-            (this.selection = event.detail.selection)}
-        ></diorama-plan-view>
+      <div class="stage mode-${mode}">
+        <div class="pane plan-pane" ?hidden=${mode === "3d"}>
+          <diorama-plan-view
+            .floor=${this.floor}
+            .tool=${this.tool}
+            .selection=${this.selection}
+            .units=${this.units}
+            @plan-edit=${(event: CustomEvent<{ floor: Floor }>) =>
+              this.applyEdit(event.detail.floor)}
+            @plan-select=${(event: CustomEvent<{ selection: Selection }>) =>
+              (this.selection = event.detail.selection)}
+          ></diorama-plan-view>
+          ${this.renderPlanOverlays()}
+        </div>
+        ${mode === "plan" ? nothing : html`<div class="pane scene-pane">${this.renderScene()}</div>`}
         ${this.narrow ? this.renderNarrowNotice() : [this.renderTools(), this.renderSave()]}
         <div class="notices">${this.renderNotices()}</div>
       </div>
@@ -340,6 +394,19 @@ export class DioramaEditor extends LitElement {
     `;
   }
 
+  private renderScene(): TemplateResult {
+    if (this.sceneFailed) {
+      return html`<p class="pane-message" role="alert">
+        The 3D view could not be loaded. Reload the page to try again.
+      </p>`;
+    }
+    if (!this.sceneLoaded) return html`<p class="pane-message">Loading the 3D view...</p>`;
+    return html`<diorama-scene-view
+      .floors=${this.sceneFloors}
+      .highlightRoom=${this.selection.room}
+    ></diorama-scene-view>`;
+  }
+
   private renderTools(): TemplateResult {
     const tool = (id: Tool, label: string, key: string) => html`
       <button
@@ -352,10 +419,23 @@ export class DioramaEditor extends LitElement {
         ${icon(id)}
       </button>
     `;
+    const view = (id: ViewMode, label: string, name: "plan" | "split" | "cube") => html`
+      <button
+        class=${this.viewMode === id ? "active" : ""}
+        title=${label}
+        aria-label=${label}
+        aria-pressed=${this.viewMode === id}
+        @click=${() => this.setViewMode(id)}
+      >
+        ${icon(name)}
+      </button>
+    `;
     return html`
       <div class="toolbar tools" role="toolbar" aria-label="Tools">
-        ${tool("select", "Select and move", "V")} ${tool("wall", "Draw walls", "W")}
-        <span class="divider"></span>
+        ${this.mode === "3d"
+          ? nothing
+          : html`${tool("select", "Select and move", "V")} ${tool("wall", "Draw walls", "W")}
+              <span class="divider"></span>`}
         <button
           title="Undo (Ctrl+Z)"
           aria-label="Undo"
@@ -372,24 +452,32 @@ export class DioramaEditor extends LitElement {
         >
           ${icon("redo")}
         </button>
+        <span class="divider"></span>
+        ${view("plan", "Plan only", "plan")} ${view("split", "Plan and 3D side by side", "split")}
+        ${view("3d", "3D only", "cube")}
       </div>
-      ${this.floor && this.floor.walls.length === 0 && this.tool === "select"
-        ? html`
-            <div class="start">
-              <p>Nothing drawn on this floor yet.</p>
-              <button class="primary" @click=${() => this.setTool("wall")}>
-                ${icon("wall")} Draw walls
-              </button>
-            </div>
-          `
-        : nothing}
-      ${this.tool === "wall"
-        ? html`<p class="hint">
-            Click to place each corner. Type a length and press Enter for an exact wall. Esc to
-            finish.
-          </p>`
-        : nothing}
     `;
+  }
+
+  /** What sits over the plan itself: the nudge to start, and the tool's hint. */
+  private renderPlanOverlays(): TemplateResult | typeof nothing {
+    if (this.narrow) return nothing;
+    if (this.floor && this.floor.walls.length === 0 && this.tool === "select") {
+      return html`
+        <div class="start">
+          <p>Nothing drawn on this floor yet.</p>
+          <button class="primary" @click=${() => this.setTool("wall")}>
+            ${icon("wall")} Draw walls
+          </button>
+        </div>
+      `;
+    }
+    if (this.tool === "wall") {
+      return html`<p class="hint">
+        Click to place each corner. Type a length and press Enter for an exact wall. Esc to finish.
+      </p>`;
+    }
+    return nothing;
   }
 
   private renderSave(): TemplateResult {
@@ -410,7 +498,7 @@ export class DioramaEditor extends LitElement {
   }
 
   private renderNarrowNotice(): TemplateResult {
-    return html`<p class="hint">Drawing needs a wider screen. Here you can look around.</p>`;
+    return html`<p class="hint narrow">Drawing needs a wider screen. Here you can look around.</p>`;
   }
 
   private renderNotices(): TemplateResult | typeof nothing {
@@ -475,10 +563,40 @@ export class DioramaEditor extends LitElement {
         position: relative;
         flex: 1;
         min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
       }
-      diorama-plan-view {
+      .stage.mode-split {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      .pane {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+      }
+      .pane[hidden] {
+        display: none;
+      }
+      .scene-pane {
+        border-left: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+      }
+      .stage.mode-3d .scene-pane {
+        border-left: 0;
+      }
+      diorama-plan-view,
+      diorama-scene-view {
         position: absolute;
         inset: 0;
+      }
+      .pane-message {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+        color: var(--diorama-text-muted);
       }
       diorama-inspector {
         flex: none;
@@ -578,7 +696,9 @@ export class DioramaEditor extends LitElement {
         left: 50%;
         bottom: 16px;
         transform: translateX(-50%);
-        max-width: calc(100% - 220px);
+        box-sizing: border-box;
+        width: max-content;
+        max-width: calc(100% - 200px);
         margin: 0;
         padding: 8px 14px;
         border-radius: 999px;
@@ -588,10 +708,9 @@ export class DioramaEditor extends LitElement {
         text-align: center;
         pointer-events: none;
       }
-      :host([narrow]) .hint {
+      .hint.narrow {
         bottom: 64px;
         max-width: calc(100% - 32px);
-        width: max-content;
       }
       .start {
         position: absolute;
@@ -653,6 +772,24 @@ export class DioramaEditor extends LitElement {
       }
     `,
   ];
+}
+
+type Settings = Pick<Storage, "getItem" | "setItem"> | undefined;
+
+function readSetting(storage: Settings, key: string): string | null {
+  try {
+    return storage?.getItem(key) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSetting(storage: Settings, key: string, value: string): void {
+  try {
+    storage?.setItem(key, value);
+  } catch {
+    // Not remembered, then.
+  }
 }
 
 /** Keys typed into a field are for the field. */

@@ -18,11 +18,11 @@ from .const import (
     CARD_FILE,
     DOMAIN,
     FRONTEND_DIR,
-    FRONTEND_URL,
     PANEL_ELEMENT,
     PANEL_FILE,
     PANEL_ICON,
     PANEL_URL_PATH,
+    STATIC_URL,
     TITLE,
 )
 from .store import DioramaStore, StoredDataInvalid
@@ -66,7 +66,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
 
     if not hass.data.get(DATA_STATIC_REGISTERED):
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(FRONTEND_URL, str(FRONTEND_DIR), cache_headers=True)]
+            [
+                StaticPathConfig(
+                    frontend_url(version), str(FRONTEND_DIR), cache_headers=True
+                )
+            ]
         )
         hass.data[DATA_STATIC_REGISTERED] = True
 
@@ -94,9 +98,19 @@ async def async_unload_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> 
     return True
 
 
+def frontend_url(version: str) -> str:
+    """Return where this version's frontend files are served.
+
+    The version is part of the path, not a query string. The files import each
+    other by relative path, which drops a query string: the browser would then
+    see the entry file under two addresses and run it twice.
+    """
+    return f"{STATIC_URL}/{version}"
+
+
 def versioned_url(filename: str, version: str) -> str:
     """Return the URL of a frontend file, changing with every release."""
-    return f"{FRONTEND_URL}/{filename}?v={version}"
+    return f"{frontend_url(version)}/{filename}"
 
 
 def _frontend_is_built() -> bool:
