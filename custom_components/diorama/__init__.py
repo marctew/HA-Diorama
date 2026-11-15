@@ -9,9 +9,11 @@ from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
+from . import websocket_api
 from .const import (
     CARD_FILE,
     DOMAIN,
@@ -23,6 +25,7 @@ from .const import (
     PANEL_URL_PATH,
     TITLE,
 )
+from .store import DioramaStore, StoredDataInvalid
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,13 +39,21 @@ class DioramaData:
     """What a loaded config entry holds."""
 
     card_url: str
+    store: DioramaStore
 
 
 type DioramaConfigEntry = ConfigEntry[DioramaData]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> bool:
-    """Serve the frontend, add the panel and load the card."""
+    """Load the house, serve the frontend, add the panel and load the card."""
+    store = DioramaStore(hass)
+    try:
+        await store.async_load()
+    except StoredDataInvalid as err:
+        raise ConfigEntryError(str(err)) from err
+    websocket_api.async_register(hass)
+
     integration = await async_get_integration(hass, DOMAIN)
     version = str(integration.version)
 
@@ -72,7 +83,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
 
     card_url = versioned_url(CARD_FILE, version)
     frontend.add_extra_js_url(hass, card_url)
-    entry.runtime_data = DioramaData(card_url=card_url)
+    entry.runtime_data = DioramaData(card_url=card_url, store=store)
     return True
 
 

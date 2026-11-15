@@ -2,7 +2,7 @@
 
 Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
 
-> **Early days.** The integration installs and adds its panel and card, but both only show a placeholder. The editor and the 3D view are not built yet. [SPEC.md](SPEC.md) has the design and the build order.
+> **Early days.** The integration installs, adds its panel and card, and can store a house, but there is no editor or 3D view yet: the panel and card only show a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
 
 ## Install
 

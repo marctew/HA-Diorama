@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stage 1 (the skeleton) is built. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 (the skeleton) and 2 (storage and the WebSocket API) are built. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -82,34 +82,38 @@ Setup
 - `manifest.json`: `domain`, `name`, `version` (same as the release tag; the Marketplace refuses an install without it), `documentation`, `issue_tracker`, `codeowners`, `config_flow: true`, `dependencies: ["http", "frontend", "panel_custom", "websocket_api"]`, `categories` (one to three, from the integration categories list), no `requirements` unless needed.
 - The panel owns its whole page: it draws its own header and the button that opens the sidebar on narrow screens, and uses the `narrow` and `route` properties it is given.
 
-Storage
+Storage (`store.py`, built)
 
 - `Store` helper, so data lands in `.storage` and is in every backup.
 - `diorama.house`: house settings and the ordered list of floors (ids, names, elevation, `ha_floor_id`).
-- `diorama.floor.<id>`: one file per floor, holding everything on that floor (section 5).
-- Every stored document has `schema_version` and a `revision` counter. Migrations run through the Store's migrate hook.
+- `diorama.floor.<id>`: one file per floor, holding everything on that floor (section 5). A floor that is listed but has never been saved has no file and reads as empty.
+- Every document has `schema_version` and a `revision` that goes up by one with each save. Both are set by the server; a client can send them back and they are ignored. Format changes later go through the Store's migrate hook.
 - Uploaded models and trace images live in `<config>/diorama/`, outside `custom_components`, because a Marketplace update replaces the whole integration folder.
+- Removing the integration leaves the stored house in place, so removing and adding it again loses nothing.
 
-WebSocket commands
+WebSocket commands (`websocket_api.py`, built)
 
 | Command | Who | Purpose |
 |---|---|---|
-| `diorama/house/get` | any user | House settings and floor list |
-| `diorama/house/save` | admin | Save house settings and floor list |
-| `diorama/floor/get` | any user | One floor document |
-| `diorama/floor/save` | admin | Save one floor; must send the `revision` it was based on, rejected with `conflict` if stale |
-| `diorama/floor/delete` | admin | Delete a floor |
-| `diorama/subscribe` | any user | Pushes `{floor_id, revision}` when anything is saved, so open cards reload |
-| `diorama/catalogue/get` | any user | Bundled plus uploaded model catalogue |
-| `diorama/export` / `diorama/import` | admin | Whole house as one JSON document |
+| `diorama/house/get` | any user | Returns `{house}`: settings, floor list, revision |
+| `diorama/house/save` `{revision, house}` | admin | Saves settings and the floor list. Can rename, reorder and add floors; leaving an existing floor out is refused |
+| `diorama/floor/get` `{floor_id}` | any user | Returns `{floor}` |
+| `diorama/floor/save` `{floor_id, revision, floor}` | admin | Saves one floor and returns it with its new revision |
+| `diorama/floor/delete` `{floor_id}` | admin | Removes the floor from the house and deletes its file |
+| `diorama/subscribe` | any user | Events: `{type: "house", revision}`, `{type: "floor", floor_id, revision}`, `{type: "floor_deleted", floor_id}`, `{type: "reset", revision}` after an import |
+| `diorama/export` | admin | Returns `{export: {diorama_export: 1, house, floors: {id: floor}}}` |
+| `diorama/import` `{data}` | admin | Replaces the whole house with an export. Every revision jumps above anything a client can be holding |
+| `diorama/catalogue/get` | any user | Bundled plus uploaded model catalogue. Comes with stage 5 |
 
-HTTP
+Errors use Home Assistant's `{code, message}`: `invalid_format` with the path of the problem (`walls.0.b: there is no vertex 'v9'`), `conflict` when `revision` is not the current one (nothing is saved; the client reloads), `not_found` for an unknown floor, `unauthorized` for a non-admin, `invalid_stored_data` when a stored floor fails validation.
+
+HTTP (not built; uploads come with the trace image in stage 8 and model upload in stage 10)
 
 - `POST /api/diorama/models` (admin, authenticated): upload a `.glb`. Check the glTF binary magic bytes, cap size at 10 MB, store under a generated id, never use the uploaded filename as a path.
 - `DELETE /api/diorama/models/<id>` (admin).
 - `GET /api/diorama/models/<id>` and `GET /api/diorama/trace/<id>` (any authenticated user): uploaded files are served through authenticated views, not a static path, and the frontend fetches them with `hass.fetchWithAuth`. Only the bundled CC0 catalogue is public.
 
-Validation: every save is validated server-side with voluptuous against the schema in section 5 (types, ranges, id references). Entity IDs are stored as given and not required to exist, so a removed device does not make a floor unsaveable.
+Validation (`schema.py`, built): every save is checked against section 5: types, ranges, size limits, unique ids and references between walls, vertices, openings, rooms, items and fixtures. Stored documents are checked again when they are loaded: a broken house stops setup with an error naming the file, a broken floor is reported instead of served, and neither file is touched, so a backup can be restored or an import laid over it. Entity IDs are checked for shape only and not required to exist, so a removed device does not make a floor unsaveable. Schemas are written with `import voluptuous as vol`, which Home Assistant resolves to Probatio, its own validation library since 2026.9.
 
 ## 5. Scene model
 
@@ -264,6 +268,8 @@ Stages 1 to 7 are the first public alpha.
 - Entity state and service calls go through the frontend `hass` object and WebSocket, never polling.
 - Scene stored per floor so a room card loads only what it needs.
 - Locks never toggle on tap; garage doors ask first.
+- Removing the integration keeps the stored house. Deleting a floor is its own explicit command and cannot happen as a side effect of saving the floor list.
+- Ids (floors, vertices, walls and so on) are made by the client: lowercase letters, digits and underscores, at most 32 characters.
 
 ## 14. Checked against the docs, and still open
 
@@ -282,6 +288,7 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - The Vite build needs `base: "./"`, or the preload of lazy chunks asks for them at the site root and gets a 404.
 - None of the integration categories fits a dashboard tool, so the manifest has no `categories`. The HACS action reports that as a warning, not a failure.
 - In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
+- Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
 
 Still open:
 

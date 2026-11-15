@@ -1,5 +1,7 @@
-import { css, html, LitElement, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { describeFloors } from "../core/api";
+import { HouseController } from "../shared/house-controller";
 import { roomIllustration } from "../shared/illustration";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant, PanelInfo } from "../types/hass";
@@ -14,6 +16,12 @@ export class DioramaPanel extends LitElement {
   @property({ type: Boolean, reflect: true }) narrow = false;
   @property({ attribute: false }) route?: { prefix: string; path: string };
   @property({ attribute: false }) panel?: PanelInfo;
+
+  private readonly houseController = new HouseController(this);
+
+  protected override willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has("hass")) this.houseController.setHass(this.hass);
+  }
 
   protected override render(): TemplateResult {
     const version = this.panel?.config?.version;
@@ -36,10 +44,18 @@ export class DioramaPanel extends LitElement {
             This is where you will draw your floors and rooms, add furniture and place your
             devices. The editor is not built yet.
           </p>
+          ${this.renderHouse()}
           ${version ? html`<p class="version">Version ${version}</p>` : nothing}
         </div>
       </main>
     `;
+  }
+
+  private renderHouse(): TemplateResult | typeof nothing {
+    const { house, error } = this.houseController;
+    if (error) return html`<p class="status error" role="alert">${error}</p>`;
+    if (!house) return nothing;
+    return html`<p class="status">${house.settings.name} · ${describeFloors(house)}</p>`;
   }
 
   private showMenuButton(): boolean {
@@ -130,6 +146,19 @@ export class DioramaPanel extends LitElement {
         margin: 0;
         line-height: 1.5;
         color: var(--diorama-text-muted);
+      }
+      .status {
+        margin-top: 8px;
+        padding: 6px 14px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 999px;
+        font-size: 0.875rem;
+        color: var(--diorama-text);
+      }
+      .status.error {
+        border-color: var(--error-color, #db4437);
+        border-radius: 12px;
+        color: var(--error-color, #db4437);
       }
       .version {
         margin-top: 8px;

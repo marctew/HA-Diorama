@@ -36,6 +36,12 @@ export interface HomeAssistant {
     target?: { entity_id?: string | string[] },
   ): Promise<unknown>;
   callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T>;
+  connection: {
+    subscribeMessage<T>(
+      callback: (message: T) => void,
+      message: { type: string; [key: string]: unknown },
+    ): Promise<() => Promise<void> | void>;
+  };
 }
 
 export interface PanelInfo {

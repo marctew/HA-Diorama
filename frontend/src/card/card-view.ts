@@ -1,6 +1,8 @@
-import { css, html, LitElement, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { aspectRatioValue, type CardConfig } from "../core/card-config";
+import { describeFloors } from "../core/api";
+import { HouseController } from "../shared/house-controller";
 import { roomIllustration } from "../shared/illustration";
 import { navigate } from "../shared/navigate";
 import { themeStyles } from "../shared/theme";
@@ -13,6 +15,12 @@ export class DioramaCardView extends LitElement {
   @property({ attribute: false }) hass?: HomeAssistant;
   @property({ attribute: false }) config?: CardConfig;
 
+  private readonly houseController = new HouseController(this);
+
+  protected override willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has("hass")) this.houseController.setHass(this.hass);
+  }
+
   protected override render(): TemplateResult | typeof nothing {
     if (!this.config) return nothing;
     const ratio = aspectRatioValue(this.config.aspect_ratio);
@@ -21,11 +29,31 @@ export class DioramaCardView extends LitElement {
         <div class="stage" style="aspect-ratio: ${ratio}">
           <div class="empty">
             ${roomIllustration()}
-            <p class="title">No house drawn yet</p>
-            <p class="hint">${this.hint()}</p>
+            ${this.renderMessage()}
           </div>
         </div>
       </ha-card>
+    `;
+  }
+
+  private renderMessage(): TemplateResult | typeof nothing {
+    const { house, error } = this.houseController;
+    if (error) {
+      return html`
+        <p class="title">Diorama is not available</p>
+        <p class="hint" role="alert">${error}</p>
+      `;
+    }
+    if (!house) return nothing;
+    if (house.floors.length === 0) {
+      return html`
+        <p class="title">No house drawn yet</p>
+        <p class="hint">${this.hint()}</p>
+      `;
+    }
+    return html`
+      <p class="title">${house.settings.name}</p>
+      <p class="hint">${describeFloors(house)}. The 3D view is not built yet.</p>
     `;
   }
 

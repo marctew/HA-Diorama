@@ -112,3 +112,26 @@ async def test_missing_frontend_is_logged(
         await hass.async_block_till_done()
 
     assert "frontend is missing" in caplog.text
+
+
+async def test_broken_stored_house_stops_setup(
+    hass: HomeAssistant,
+    config_entry,
+    built_frontend,
+    hass_storage,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hass_storage["diorama.house"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": "diorama.house",
+        "data": {"floors": [{"id": "Not An Id", "name": "Ground"}]},
+    }
+    config_entry.add_to_hass(hass)
+
+    assert not await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert config_entry.state is ConfigEntryState.SETUP_ERROR
+    assert "The stored house is not valid" in caplog.text
+    assert hass_storage["diorama.house"]["data"]["floors"][0]["id"] == "Not An Id"
