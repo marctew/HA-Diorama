@@ -108,7 +108,7 @@ npm test && npm run typecheck && npm run lint
 
 To try it, link or copy `custom_components/diorama` into the `custom_components` folder of a Home Assistant configuration, build the frontend, restart, and add the integration. [SPEC.md](SPEC.md) has the design and what was learned building it.
 
-To release, push a tag that equals `version` in `manifest.json` (`git tag 0.4.0 && git push origin 0.4.0`). An action builds the frontend, makes the GitHub release with the changelog since the last one as its notes, and attaches `diorama.zip`, which is what the Marketplace installs. Publishing a release by hand on GitHub works too.
+To release, raise `version` in `manifest.json`, then either run the **Release** workflow from the Actions tab on `main` or push a tag that equals the version. An action builds the frontend, makes the GitHub release with the changelog since the last one as its notes, and attaches `diorama.zip`, which is what the Marketplace installs. Publishing a release by hand on GitHub works too.
 
 ## Licence
 

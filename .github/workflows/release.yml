@@ -3,9 +3,11 @@ name: Release
 # Builds the frontend and attaches diorama.zip to a release. That zip is what
 # the Marketplace installs (zip_release in hacs.json).
 #
-# Two ways in: publish a release on GitHub by hand, or push a tag that is a
-# version number, and the release is made here with that version's section of
-# CHANGELOG.md as its notes.
+# Three ways in: publish a release on GitHub by hand; push a tag that is a
+# version number; or run this workflow from the Actions tab on the branch to
+# release, which tags it with the version in the manifest. In the last two
+# the release is made here, with the changelog since the last release as its
+# notes.
 
 on:
   release:
@@ -13,6 +15,7 @@ on:
   push:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,17 +25,25 @@ jobs:
     name: Build and attach diorama.zip
     runs-on: ubuntu-latest
     env:
-      TAG: ${{ github.event.release.tag_name || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check that the tag matches the manifest version
+      - name: Work out the version
+        env:
+          GIVEN: ${{ github.event.release.tag_name || (github.ref_type == 'tag' && github.ref_name) || '' }}
         run: |
           version="$(jq -r .version custom_components/diorama/manifest.json)"
-          if [ "${TAG#v}" != "$version" ]; then
-            echo "::error::Tag $TAG does not match manifest version $version"
+          # Run by hand, the tag is the version in the manifest.
+          tag="${GIVEN:-$version}"
+          if [ "${tag#v}" != "$version" ]; then
+            echo "::error::Tag $tag does not match manifest version $version"
             exit 1
           fi
+          if [ "$GITHUB_EVENT_NAME" != "release" ] && gh release view "$tag" > /dev/null 2>&1; then
+            echo "::error::There is already a release $tag. Raise the version in the manifest first"
+            exit 1
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -47,7 +58,7 @@ jobs:
         working-directory: custom_components/diorama
         run: zip -r "$GITHUB_WORKSPACE/diorama.zip" . -x '*/__pycache__/*' -x '*.pyc'
       - name: Write the release notes
-        if: github.event_name == 'push'
+        if: github.event_name != 'release'
         run: |
           # Everything in the changelog since the last release: a version
           # that was never released on its own is not left out.
@@ -63,8 +74,9 @@ jobs:
           fi
           cat notes.md
       - name: Make the release
-        if: github.event_name == 'push'
-        run: gh release create "$TAG" diorama.zip --title "$TAG" --notes-file notes.md --verify-tag
+        if: github.event_name != 'release'
+        # Makes the tag too, on this commit, if it was not pushed.
+        run: gh release create "$TAG" diorama.zip --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
       - name: Attach it to the release
         if: github.event_name == 'release'
         run: gh release upload "$TAG" diorama.zip --clobber
