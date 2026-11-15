@@ -41,6 +41,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_floor_save,
         ws_floor_delete,
         ws_subscribe,
+        ws_catalogue_get,
         ws_export,
         ws_import,
     ):
@@ -196,6 +197,25 @@ def ws_subscribe(
 
     connection.subscriptions[msg["id"]] = store.async_subscribe(forward)
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): "diorama/catalogue/get"})
+@callback
+def ws_catalogue_get(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return the furniture catalogue and where its model files are served."""
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.state is ConfigEntryState.LOADED:
+            connection.send_result(
+                msg["id"], {"catalogue": entry.runtime_data.catalogue}
+            )
+            return
+    connection.send_error(
+        msg["id"], websocket_api.ERR_NOT_FOUND, "Diorama is not set up"
+    )
 
 
 @websocket_api.require_admin

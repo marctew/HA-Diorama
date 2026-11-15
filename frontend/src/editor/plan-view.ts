@@ -1,16 +1,25 @@
 import { css, html, LitElement, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { EMPTY_CATALOGUE, findModel, type Catalogue, type CatalogueModel } from "../core/catalogue";
 import {
   distance,
   interiorPoint,
   pointInPolygon,
   polygonArea,
   projectOnSegment,
+  roundTo,
   type Point,
 } from "../core/geometry";
+import {
+  itemFootprint,
+  moveItems,
+  normaliseRotation,
+  placeItem,
+  snapToWall,
+} from "../core/items";
 import { addWall, commit, moveVertices } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Floor } from "../core/scene";
+import type { Floor, Item } from "../core/scene";
 import { snap, type SnapResult } from "../core/snap";
 import { formatArea, formatLength, parseLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
@@ -18,37 +27,49 @@ import { icon } from "./icons";
 import { NO_SELECTION, prune, toggle, type Selection } from "./selection";
 import { fit, gridStep, scaleBarLength, toScreen, toWorld, zoomAt, type View } from "./view";
 
-export type Tool = "select" | "wall";
+export type Tool = "select" | "wall" | "furniture";
 
 const SNAP_PIXELS = 10;
 const VERTEX_HIT_PIXELS = 10;
 const WALL_HIT_PIXELS = 7;
 const DRAG_START_PIXELS = 4;
+/** Furniture this close to a wall, in pixels, turns its back to it. */
+const WALL_SNAP_PIXELS = 18;
 /** Snap to 5 cm. */
 const GRID = 0.05;
 
+type Hit = { kind: "vertex" | "wall" | "item" | "room"; id: string };
+
 type Drag =
   | { kind: "pan"; pointer: number; last: Point }
+  | { kind: "marquee"; pointer: number; start: Point; end: Point }
   | {
       kind: "move";
       pointer: number;
       start: Point;
-      ids: string[];
-      origins: Map<string, Point>;
+      /** The corners being moved, and where they started. */
+      vertices: Map<string, Point>;
+      /** The furniture being moved, and where it started. */
+      items: Map<string, Item>;
+      /** The thing that was grabbed: it snaps, the rest follow. */
+      anchor: { kind: "vertex" | "item"; id: string };
       moved: boolean;
     };
 
 /** The plan: draws the floor from above and turns the pointer into edits.
  *
  * It owns nothing but the viewport and what is in progress (a wall being
- * drawn, a drag). Finished edits leave as `plan-edit` events carrying the new
- * floor; the selection and the tool are properties, changed through
- * `plan-select` and `plan-tool` events. */
+ * drawn, a piece of furniture being placed, a drag). Finished edits leave as
+ * `plan-edit` events carrying the new floor; the selection and the tool are
+ * properties, changed through `plan-select` events. */
 @customElement("diorama-plan-view")
 export class DioramaPlanView extends LitElement {
   @property({ attribute: false }) floor?: Floor;
   @property() tool: Tool = "select";
   @property({ attribute: false }) selection: Selection = NO_SELECTION;
+  @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
+  /** The model that a click will place, with the furniture tool. */
+  @property({ attribute: false }) placing?: CatalogueModel;
   @property() units: UnitSystem = "metric";
   /** Look but do not touch: panning and zooming only. */
   @property({ type: Boolean }) readonly = false;
@@ -56,7 +77,7 @@ export class DioramaPlanView extends LitElement {
   @state() private view: View = { scale: 60, x: 0, y: 0 };
   @state() private width = 0;
   @state() private height = 0;
-  /** While dragging: the floor with the dragged corners where the pointer is. */
+  /** While dragging: the floor with what is dragged where the pointer is. */
   @state() private transient?: Floor;
   /** The first end of the wall being drawn. */
   @state() private chain?: Point;
@@ -64,6 +85,11 @@ export class DioramaPlanView extends LitElement {
   @state() private target?: SnapResult;
   /** A length being typed for the wall being drawn. */
   @state() private typed = "";
+  /** Where the furniture being placed would go. */
+  @state() private ghost?: { point: Point; rotation: number };
+  /** How the furniture being placed is turned, away from walls. */
+  @state() private placeRotation = 0;
+  @state() private marquee?: { start: Point; end: Point };
   @state() private panning = false;
   @state() private spaceDown = false;
 
@@ -71,6 +97,7 @@ export class DioramaPlanView extends LitElement {
   private fitted?: string;
   /** Whether the view has been panned or zoomed by hand since it was fitted. */
   private viewTouched = false;
+  private lastPointer?: { screen: Point; altKey: boolean };
   private resizeObserver?: ResizeObserver;
 
   override connectedCallback(): void {
@@ -97,6 +124,10 @@ export class DioramaPlanView extends LitElement {
       this.view = fit(this.floor, this.width, this.height);
     }
     if (changed.has("tool") && this.tool !== "wall") this.stopDrawing();
+    if (changed.has("tool") || changed.has("placing")) {
+      if (this.tool !== "furniture" || !this.placing) this.ghost = undefined;
+      else if (this.lastPointer) this.updateGhost(this.lastPointer.screen, this.lastPointer);
+    }
     if (changed.has("floor")) this.transient = undefined;
   }
 
@@ -147,6 +178,15 @@ export class DioramaPlanView extends LitElement {
     return false;
   }
 
+  /** Turn the furniture that is about to be placed. Returns false if nothing
+   * is being placed. */
+  rotatePlacing(degrees: number): boolean {
+    if (this.tool !== "furniture" || !this.placing) return false;
+    this.placeRotation = normaliseRotation(this.placeRotation + degrees);
+    if (this.lastPointer) this.updateGhost(this.lastPointer.screen, this.lastPointer);
+    return true;
+  }
+
   /** Hold space to pan with the left button. */
   setSpace(down: boolean): void {
     this.spaceDown = down;
@@ -171,8 +211,15 @@ export class DioramaPlanView extends LitElement {
         @dblclick=${this.onDoubleClick}
       >
         ${this.renderGrid()}
-        ${floor ? [this.renderRooms(floor), this.renderWalls(floor), this.renderVertices(floor)] : nothing}
-        ${this.renderDrawing()}
+        ${floor
+          ? [
+              this.renderRooms(floor),
+              this.renderItems(floor),
+              this.renderWalls(floor),
+              this.renderVertices(floor),
+            ]
+          : nothing}
+        ${this.renderGhost()} ${this.renderDrawing()} ${this.renderMarquee()}
       </svg>
       ${this.renderScaleBar()}
       <div class="zoom" role="group" aria-label="Zoom">
@@ -192,7 +239,8 @@ export class DioramaPlanView extends LitElement {
   private cursorClass(): string {
     if (this.panning) return "panning";
     if (this.spaceDown || this.readonly) return "pannable";
-    return this.tool === "wall" ? "drawing" : "";
+    if (this.tool === "wall") return "drawing";
+    return this.tool === "furniture" && this.placing ? "placing" : "";
   }
 
   private renderGrid(): TemplateResult {
@@ -245,6 +293,56 @@ export class DioramaPlanView extends LitElement {
     });
   }
 
+  private renderItems(floor: Floor): TemplateResult[] {
+    const selected = new Set(this.selection.items);
+    return floor.items.map((item) => {
+      const model = findModel(this.catalogue, item.model);
+      return this.renderFootprint(
+        item,
+        model,
+        `item ${selected.has(item.id) ? "selected" : ""} ${model ? "" : "unknown"}`,
+      );
+    });
+  }
+
+  /** A piece of furniture from above: its outline, and a bar along its front. */
+  private renderFootprint(
+    item: Item,
+    model: CatalogueModel | undefined,
+    classes: string,
+  ): TemplateResult {
+    const corners = itemFootprint(item, model).map((point) => toScreen(this.view, point));
+    const [backLeft, backRight, frontRight, frontLeft] = corners;
+    const towards = (from: Point, to: Point, t: number): Point => ({
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+    });
+    // The bar sits a little in from the front edge.
+    const left = towards(towards(frontLeft, backLeft, 0.12), frontRight, 0.14);
+    const right = towards(towards(frontRight, backRight, 0.12), frontLeft, 0.14);
+    return svg`
+      <g class=${classes}>
+        <polygon points=${corners.map((point) => `${point.x},${point.y}`).join(" ")} />
+        <line class="front" x1=${left.x} y1=${left.y} x2=${right.x} y2=${right.y} />
+      </g>
+    `;
+  }
+
+  private renderGhost(): TemplateResult | typeof nothing {
+    if (!this.ghost || !this.placing || this.readonly) return nothing;
+    const item: Item = {
+      id: "ghost",
+      model: this.placing.id,
+      x: this.ghost.point.x,
+      y: this.ghost.point.y,
+      z: 0,
+      rotation: this.ghost.rotation,
+      scale: 1,
+      room: null,
+    };
+    return this.renderFootprint(item, this.placing, "item ghost");
+  }
+
   private renderWalls(floor: Floor): TemplateResult[] {
     const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
     const selected = new Set(this.selection.walls);
@@ -282,7 +380,7 @@ export class DioramaPlanView extends LitElement {
   }
 
   private renderVertices(floor: Floor): TemplateResult[] {
-    if (this.readonly) return [];
+    if (this.readonly || this.tool === "furniture") return [];
     const selected = new Set(this.selection.vertices);
     return floor.vertices.map((vertex) => {
       const point = toScreen(this.view, vertex);
@@ -326,6 +424,16 @@ export class DioramaPlanView extends LitElement {
     return svg`${guides}${preview}${this.typed ? nothing : marker}`;
   }
 
+  private renderMarquee(): TemplateResult | typeof nothing {
+    if (!this.marquee) return nothing;
+    const { start, end } = this.marquee;
+    return svg`<rect
+      class="marquee"
+      x=${Math.min(start.x, end.x)} y=${Math.min(start.y, end.y)}
+      width=${Math.abs(end.x - start.x)} height=${Math.abs(end.y - start.y)}
+    />`;
+  }
+
   private renderScaleBar(): TemplateResult {
     const metres = scaleBarLength(this.view.scale);
     return html`
@@ -355,6 +463,35 @@ export class DioramaPlanView extends LitElement {
     });
   }
 
+  /** Where a model goes for a pointer position: back to a nearby wall if it
+   * is that sort of furniture, otherwise on the grid, turned as given. */
+  private furnitureAt(
+    world: Point,
+    model: CatalogueModel | undefined,
+    scale: number,
+    rotation: number,
+    event: { altKey: boolean },
+  ): { point: Point; rotation: number } {
+    const floor = this.floor;
+    if (event.altKey || !floor) return { point: world, rotation };
+    if (model?.against_wall) {
+      const onWall = snapToWall(floor, world, model, scale, WALL_SNAP_PIXELS / this.view.scale);
+      if (onWall) return onWall;
+    }
+    return { point: { x: roundTo(world.x, GRID), y: roundTo(world.y, GRID) }, rotation };
+  }
+
+  private updateGhost(screen: Point, event: { altKey: boolean }): void {
+    if (!this.placing) return;
+    this.ghost = this.furnitureAt(
+      toWorld(this.view, screen),
+      this.placing,
+      1,
+      this.placeRotation,
+      event,
+    );
+  }
+
   private onPointerDown(event: PointerEvent): void {
     const screen = this.pointerPosition(event);
     const svgElement = event.currentTarget as SVGSVGElement;
@@ -374,10 +511,15 @@ export class DioramaPlanView extends LitElement {
       this.placePoint(this.snapAt(screen, event));
       return;
     }
+    if (this.tool === "furniture" && this.placing) {
+      this.updateGhost(screen, event);
+      if (this.ghost) this.placeFurniture(this.ghost);
+      return;
+    }
 
     const hit = this.hitTest(toWorld(this.view, screen));
-    if (hit?.kind === "vertex" || hit?.kind === "wall") {
-      const list = hit.kind === "vertex" ? "vertices" : "walls";
+    if (hit && hit.kind !== "room") {
+      const list = hit.kind === "vertex" ? "vertices" : hit.kind === "wall" ? "walls" : "items";
       const already = this.selection[list].includes(hit.id);
       let selection: Selection;
       if (event.shiftKey) {
@@ -389,7 +531,12 @@ export class DioramaPlanView extends LitElement {
       }
       this.select(selection);
       if (event.shiftKey && already) return;
-      this.startMove(svgElement, event, screen, selection);
+      this.startMove(svgElement, event, screen, selection, hit);
+      return;
+    }
+    if (event.shiftKey) {
+      svgElement.setPointerCapture(event.pointerId);
+      this.drag = { kind: "marquee", pointer: event.pointerId, start: screen, end: screen };
       return;
     }
     this.select(hit ? { ...NO_SELECTION, room: hit.id } : NO_SELECTION);
@@ -406,6 +553,7 @@ export class DioramaPlanView extends LitElement {
     event: PointerEvent,
     screen: Point,
     selection: Selection,
+    hit: Hit,
   ): void {
     const floor = this.floor!;
     const ids = new Set(selection.vertices);
@@ -414,24 +562,35 @@ export class DioramaPlanView extends LitElement {
       ids.add(wall.a);
       ids.add(wall.b);
     }
-    const origins = new Map<string, Point>();
+    const vertices = new Map<string, Point>();
     for (const vertex of floor.vertices) {
-      if (ids.has(vertex.id)) origins.set(vertex.id, { x: vertex.x, y: vertex.y });
+      if (ids.has(vertex.id)) vertices.set(vertex.id, { x: vertex.x, y: vertex.y });
     }
-    if (origins.size === 0) return;
+    const items = new Map<string, Item>();
+    for (const item of floor.items) {
+      if (selection.items.includes(item.id)) items.set(item.id, item);
+    }
+    let anchor: { kind: "vertex" | "item"; id: string } | undefined;
+    if (hit.kind === "item" && items.has(hit.id)) anchor = { kind: "item", id: hit.id };
+    else if (hit.kind === "vertex" && vertices.has(hit.id)) anchor = { kind: "vertex", id: hit.id };
+    else if (vertices.size > 0) anchor = { kind: "vertex", id: [...vertices.keys()][0] };
+    else if (items.size > 0) anchor = { kind: "item", id: [...items.keys()][0] };
+    if (!anchor) return;
     element.setPointerCapture(event.pointerId);
     this.drag = {
       kind: "move",
       pointer: event.pointerId,
       start: screen,
-      ids: [...origins.keys()],
-      origins,
+      vertices,
+      items,
+      anchor,
       moved: false,
     };
   }
 
   private onPointerMove(event: PointerEvent): void {
     const screen = this.pointerPosition(event);
+    this.lastPointer = { screen, altKey: event.altKey };
     const drag = this.drag;
     if (drag?.kind === "pan" && drag.pointer === event.pointerId) {
       this.panning = true;
@@ -444,6 +603,11 @@ export class DioramaPlanView extends LitElement {
       drag.last = screen;
       return;
     }
+    if (drag?.kind === "marquee" && drag.pointer === event.pointerId) {
+      drag.end = screen;
+      this.marquee = { start: drag.start, end: screen };
+      return;
+    }
     if (drag?.kind === "move" && drag.pointer === event.pointerId) {
       if (!drag.moved && distance(screen, drag.start) < DRAG_START_PIXELS) return;
       drag.moved = true;
@@ -452,26 +616,57 @@ export class DioramaPlanView extends LitElement {
     }
     if (this.readonly) return;
     this.target = this.tool === "wall" ? this.snapAt(screen, event) : undefined;
+    if (this.tool === "furniture" && this.placing) this.updateGhost(screen, event);
   }
 
-  /** Move the dragged corners. The one that was grabbed first snaps; the
-   * rest keep their places relative to it. */
+  /** Move what is being dragged. The thing that was grabbed snaps; the rest
+   * keep their places relative to it. */
   private dragTo(drag: Extract<Drag, { kind: "move" }>, screen: Point, event: PointerEvent): void {
     const floor = this.floor!;
-    const anchorId = drag.ids[0];
-    const anchor = drag.origins.get(anchorId)!;
-    const wanted = toScreen(this.view, anchor);
-    const result = this.snapAt(
-      { x: wanted.x + screen.x - drag.start.x, y: wanted.y + screen.y - drag.start.y },
-      event,
-      new Set(drag.ids),
-    );
-    const dx = result.point.x - anchor.x;
-    const dy = result.point.y - anchor.y;
-    const positions = new Map<string, Point>();
-    for (const [id, origin] of drag.origins) positions.set(id, { x: origin.x + dx, y: origin.y + dy });
-    this.transient = moveVertices(floor, positions);
-    this.target = result;
+    const offset = { x: screen.x - drag.start.x, y: screen.y - drag.start.y };
+    let dx: number;
+    let dy: number;
+    let rotation: number | undefined;
+    if (drag.anchor.kind === "vertex") {
+      const origin = drag.vertices.get(drag.anchor.id)!;
+      const wanted = toScreen(this.view, origin);
+      const result = this.snapAt(
+        { x: wanted.x + offset.x, y: wanted.y + offset.y },
+        event,
+        new Set(drag.vertices.keys()),
+      );
+      dx = result.point.x - origin.x;
+      dy = result.point.y - origin.y;
+      this.target = result;
+    } else {
+      const origin = drag.items.get(drag.anchor.id)!;
+      const wanted = toScreen(this.view, origin);
+      const world = toWorld(this.view, { x: wanted.x + offset.x, y: wanted.y + offset.y });
+      // Only a piece moved on its own turns to face away from a wall.
+      const alone = drag.items.size === 1 && drag.vertices.size === 0;
+      const model = alone ? findModel(this.catalogue, origin.model) : undefined;
+      const placed = this.furnitureAt(world, model, origin.scale, origin.rotation, event);
+      dx = placed.point.x - origin.x;
+      dy = placed.point.y - origin.y;
+      if (alone) rotation = placed.rotation;
+    }
+    const corners = new Map<string, Point>();
+    for (const [id, origin] of drag.vertices) corners.set(id, { x: origin.x + dx, y: origin.y + dy });
+    let moved = moveVertices(floor, corners);
+    if (drag.items.size > 0) {
+      const places = new Map<string, Point>();
+      for (const [id, origin] of drag.items) places.set(id, { x: origin.x + dx, y: origin.y + dy });
+      moved = moveItems(moved, places);
+      if (rotation !== undefined) {
+        moved = {
+          ...moved,
+          items: moved.items.map((item) =>
+            item.id === drag.anchor.id ? { ...item, rotation: rotation! } : item,
+          ),
+        };
+      }
+    }
+    this.transient = moved;
   }
 
   private onPointerUp(event: PointerEvent): void {
@@ -479,15 +674,27 @@ export class DioramaPlanView extends LitElement {
     if (!drag || drag.pointer !== event.pointerId) return;
     this.drag = undefined;
     this.panning = false;
+    if (drag.kind === "marquee") {
+      this.marquee = undefined;
+      if (distance(drag.start, drag.end) >= DRAG_START_PIXELS) {
+        this.selectWithin(drag.start, drag.end);
+      }
+      return;
+    }
     if (drag.kind !== "move") return;
     const moved = this.transient;
     this.transient = undefined;
     this.target = undefined;
-    if (drag.moved && moved) this.edit(commit(moved));
+    if (!drag.moved || !moved) return;
+    // Walls only need tidying if a corner moved.
+    this.edit(drag.vertices.size > 0 ? commit(moved) : moved);
   }
 
   private onPointerLeave(): void {
-    if (!this.drag && !this.chain) this.target = undefined;
+    if (this.drag) return;
+    if (!this.chain) this.target = undefined;
+    this.ghost = undefined;
+    this.lastPointer = undefined;
   }
 
   private onWheel(event: WheelEvent): void {
@@ -558,9 +765,19 @@ export class DioramaPlanView extends LitElement {
     this.typed = "";
   }
 
+  // Furniture.
+
+  private placeFurniture(at: { point: Point; rotation: number }): void {
+    const floor = this.floor;
+    if (!floor || !this.placing) return;
+    const placed = placeItem(floor, this.placing.id, at.point, at.rotation);
+    this.dispatchEvent(new CustomEvent("plan-edit", { detail: { floor: placed.floor } }));
+    // Not selected: the next click places another.
+  }
+
   // Hit testing.
 
-  private hitTest(world: Point): { kind: "vertex" | "wall" | "room"; id: string } | undefined {
+  private hitTest(world: Point): Hit | undefined {
     const floor = this.floor;
     if (!floor) return undefined;
     let best: { id: string; distance: number } | undefined;
@@ -583,6 +800,23 @@ export class DioramaPlanView extends LitElement {
     }
     if (best) return { kind: "wall", id: best.id };
 
+    // Furniture under the pointer: a selected piece first, so that what was
+    // just picked or copied is what gets dragged; then the smallest (a lamp on
+    // a rug wins); then the one drawn last, which is the one on top.
+    let item: { id: string; area: number; selected: boolean } | undefined;
+    for (const candidate of floor.items) {
+      const outline = itemFootprint(candidate, findModel(this.catalogue, candidate.model));
+      if (!pointInPolygon(world, outline)) continue;
+      const area = polygonArea(outline);
+      const selected = this.selection.items.includes(candidate.id);
+      const better =
+        !item ||
+        (selected && !item.selected) ||
+        (selected === item.selected && area <= item.area + 1e-9);
+      if (better) item = { id: candidate.id, area, selected };
+    }
+    if (item) return { kind: "item", id: item.id };
+
     // The smallest room under the pointer: a room inside a room wins.
     let room: { id: string; area: number } | undefined;
     for (const candidate of floor.rooms) {
@@ -592,6 +826,29 @@ export class DioramaPlanView extends LitElement {
       if (!room || area < room.area) room = { id: candidate.id, area };
     }
     return room ? { kind: "room", id: room.id } : undefined;
+  }
+
+  /** Select the corners, whole walls and furniture inside a dragged box. */
+  private selectWithin(start: Point, end: Point): void {
+    const floor = this.floor;
+    if (!floor) return;
+    const a = toWorld(this.view, start);
+    const b = toWorld(this.view, end);
+    const inside = (point: Point) =>
+      point.x >= Math.min(a.x, b.x) &&
+      point.x <= Math.max(a.x, b.x) &&
+      point.y >= Math.min(a.y, b.y) &&
+      point.y <= Math.max(a.y, b.y);
+    const vertices = floor.vertices.filter(inside).map((vertex) => vertex.id);
+    const within = new Set(vertices);
+    this.select({
+      vertices,
+      walls: floor.walls
+        .filter((wall) => within.has(wall.a) && within.has(wall.b))
+        .map((wall) => wall.id),
+      items: floor.items.filter(inside).map((item) => item.id),
+      room: null,
+    });
   }
 
   // Events out.
@@ -627,6 +884,9 @@ export class DioramaPlanView extends LitElement {
       }
       svg.drawing {
         cursor: crosshair;
+      }
+      svg.placing {
+        cursor: copy;
       }
       svg.pannable {
         cursor: grab;
@@ -675,6 +935,37 @@ export class DioramaPlanView extends LitElement {
         fill: var(--diorama-text-muted);
         stroke: none;
       }
+      .item polygon {
+        fill: color-mix(in srgb, var(--diorama-text) 10%, var(--halo));
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+        stroke-width: 1.25;
+        stroke-linejoin: round;
+      }
+      .item .front {
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+        stroke-width: 2.5;
+        stroke-linecap: round;
+      }
+      .item.unknown polygon {
+        stroke-dasharray: 4 3;
+      }
+      .item.selected polygon {
+        fill: color-mix(in srgb, var(--diorama-accent) 28%, var(--halo));
+        stroke: var(--diorama-accent);
+        stroke-width: 2;
+      }
+      .item.selected .front,
+      .item.ghost .front {
+        stroke: var(--diorama-accent);
+      }
+      .item.ghost {
+        pointer-events: none;
+      }
+      .item.ghost polygon {
+        fill: color-mix(in srgb, var(--diorama-accent) 18%, transparent);
+        stroke: var(--diorama-accent);
+        stroke-dasharray: 5 4;
+      }
       .wall {
         stroke: color-mix(in srgb, var(--diorama-text) 82%, transparent);
         stroke-linecap: round;
@@ -721,6 +1012,12 @@ export class DioramaPlanView extends LitElement {
         stroke-width: 1;
         stroke-dasharray: 4 4;
         opacity: 0.7;
+      }
+      .marquee {
+        fill: color-mix(in srgb, var(--diorama-accent) 12%, transparent);
+        stroke: var(--diorama-accent);
+        stroke-width: 1;
+        stroke-dasharray: 4 3;
       }
       .scale-bar {
         position: absolute;

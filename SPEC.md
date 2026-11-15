@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 to 4 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, and the 3D renderer with its preview in the editor. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 5 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, and furniture. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -74,7 +74,7 @@ Setup
 
 - Config flow, single instance, no options to enter. Adding the integration creates an empty house.
 - On setup:
-  - Serve `frontend/dist` and `assets` with `hass.http.async_register_static_paths([StaticPathConfig(...)])` under `/diorama_static/<version>/`. These are public, unauthenticated files, like everything in `www`, so nothing user-specific goes there.
+  - Serve `frontend/dist` under `/diorama_static/<version>/` and `assets` under `/diorama_assets/<version>/` with `hass.http.async_register_static_paths([StaticPathConfig(...)])`. These are public, unauthenticated files, like everything in `www`, so nothing user-specific goes there.
   - Register the panel with `panel_custom.async_register_panel(hass, frontend_url_path="diorama", webcomponent_name="diorama-panel", module_url=..., sidebar_title="Diorama", sidebar_icon=..., require_admin=True)`.
   - Register the card loader with `frontend.add_extra_js_url(hass, url)`. Diorama is published as an integration, not a dashboard plugin, so the Marketplace does not add a dashboard resource for it; the integration loads its own card.
   - Register the WebSocket commands.
@@ -103,7 +103,7 @@ WebSocket commands (`websocket_api.py`, built)
 | `diorama/subscribe` | any user | Events: `{type: "house", revision}`, `{type: "floor", floor_id, revision}`, `{type: "floor_deleted", floor_id}`, `{type: "reset", revision}` after an import |
 | `diorama/export` | admin | Returns `{export: {diorama_export: 1, house, floors: {id: floor}}}` |
 | `diorama/import` `{data}` | admin | Replaces the whole house with an export. Every revision jumps above anything a client can be holding |
-| `diorama/catalogue/get` | any user | Bundled plus uploaded model catalogue. Comes with stage 5 |
+| `diorama/catalogue/get` | any user | Returns `{catalogue}`: the bundled models (section 10) and `base_url`, where their files are served. Uploaded models join it in stage 10 |
 
 Errors use Home Assistant's `{code, message}`: `invalid_format` with the path of the problem (`walls.0.b: there is no vertex 'v9'`), `conflict` when `revision` is not the current one (nothing is saved; the client reloads), `not_found` for an unknown floor, `unauthorized` for a non-admin, `invalid_stored_data` when a stored floor fails validation.
 
@@ -158,6 +158,9 @@ Built (stage 3)
 - The wall graph is tidied after every finished edit (`core/plan.ts`): corners in the same place merge, a wall is split where another wall meets or crosses it, duplicates and zero-length walls go, corners no wall uses go. Deleting a wall rejoins the straight run it split. Deleting a corner in a run joins its two walls.
 - Rooms are found again after every edit (`core/rooms.ts`) and keep their id, name and area through moves, splits and joins, as section 5 describes.
 - Inspector: a room's name, Home Assistant area (grouped by floor; picking one names an unnamed room), floor finish, wall colour, area and perimeter; a wall's length (the end with fewer walls attached moves) and thickness; a corner's position; the floor's wall height and totals.
+- Furniture tool (`F`): a drawer docked beside the plan with the catalogue by category, a search box and a picture of each piece. Pick one, then click in the plan to place it, as many times as you like; `R` turns it 15 degrees (Shift+`R` the other way) before or after placing; Esc stops. A piece that belongs against a wall (a sofa, a bed, a wardrobe) turns its back to a wall when it is brought near one and sits flat against it; Alt switches that off.
+- Furniture is selected, dragged, deleted and undone like walls, and can be selected together with them. Ctrl+D duplicates the selected pieces. Shift-drag on the background selects every corner, whole wall and piece of furniture in a box.
+- Each piece records the room it stands in, and that follows when it is moved or the walls around it change. The inspector shows its position, rotation, size and room.
 - Undo and redo (200 steps), Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y.
 - Saving: explicit Save (Ctrl+S) with a status. Unsaved edits are written to `localStorage` as a draft as you go and offered back after a reload or crash. If the floor is saved elsewhere meanwhile, the editor reloads when there is nothing unsaved, and otherwise offers "load their version" or "save mine over it". Leaving the page with unsaved edits asks first.
 - Lengths and areas follow Home Assistant's unit system, for display and for typed input.
@@ -165,9 +168,8 @@ Built (stage 3)
 
 Still to come
 
-- Marquee selection and duplicate (with furniture, stage 5).
 - Door/window: click a wall, drag along it, edit width/height/sill in the inspector (stage 8).
-- Furniture: catalogue drawer with search and categories, drag into plan or 3D, rotate with R (15 degree steps, Shift for free), snaps to walls (stage 5).
+- Placing furniture by dragging it out of the drawer, and into the 3D view. For now: pick, then click in the plan.
 - Devices: a drawer listing entities grouped by the selected room's area, unplaced first. Drag one into the room to create a fixture; kind and default model are picked from the entity domain and device class. A toggle shows entities from all areas (stage 6).
 - Trace: upload a plan image, click two points and enter the real distance to set scale (stage 8).
 - Floors: add, rename, reorder, set elevation, link to a Home Assistant floor, "copy outer walls from floor below" (stage 8). Until then the panel creates one "Ground floor" and shows a plain picker if the house has more.
@@ -177,13 +179,14 @@ Still to come
 - One renderer class (`render/scene-renderer.ts`) used by the panel preview and, from stage 7, the card. Input: floor documents with their elevations, and what to highlight. three.js and the renderer are in a chunk of their own, fetched the first time a 3D view is shown.
 - The triangles are made without three.js (`core/mesh.ts`), so that part is unit tested: each wall is a solid whose corners are mitred against its neighbours, so walls tile without gaps or overlap; each face of a wall takes the wall colour of the room it looks into, and the outside colour where it looks into none; one slab per room in its floor finish's colour; no ceilings. One mesh of walls and one of slabs per floor, coloured per vertex.
 - Look: flat-shaded materials, a small fixed palette, soft sky and ambient light, one directional "sun" with a single shadow map. No physically based lighting. The background is transparent, so the page shows through.
+- Furniture: each model file is loaded once and drawn as one instanced mesh per model, whatever the number of pieces. A model the catalogue does not know, or that fails to load, is a grey box.
 - Camera: orbit with limits, pinch and drag on touch, zoom limited to the size of the house. It frames the whole house until someone moves it, and "Reset view" frames it again. Editing the floor does not move the camera.
 - Render on demand only: a frame is drawn when the content, camera or size changes, and while the camera glides to a stop. Measured idle: no frames.
 - Quality tiers (`core/quality.ts`), picked from the device's cores, memory and whether it is a phone or tablet, overridable: low has no shadows or antialiasing and a pixel ratio of 1; medium has a 1024 shadow map and a pixel ratio up to 1.5; high a 2048 shadow map and up to 2.
 
 Still to come
 
-- Cut-outs for doors and windows (stage 8). Furniture, instanced (stage 5).
+- Cut-outs for doors and windows (stage 8).
 - Lights are faked, not simulated: an on light gets an emissive material on its model, a soft additive glow sprite, and a coloured wash on its room's floor scaled by brightness. Colour follows `rgb_color` or colour temperature. A small number of real unshadowed point lights (default 4, nearest to camera) can be enabled on capable devices (stage 6).
 - Views: `house` (all floors stacked, exploded spacing optional), `floor`, `room` (that room plus its walls, neighbours hidden or ghosted). Walls between the camera and the room fade out or drop to a low cut height. Saved camera presets per view, smooth transitions, double-tap a room to focus it (stages 7 and 8). The mesh builder already takes a maximum wall height for the cut.
 - Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
@@ -234,12 +237,19 @@ aspect_ratio: "16:9"
 
 ## 10. Furniture catalogue
 
-- Bundled set: Kenney Furniture Kit and Quaternius furniture, both CC0, shipped as GLB. CC0 only in the bundle; anything needing attribution stays out. Sources and licences are still listed in `CREDITS.md`.
-- `tools/build_catalogue.py` takes the source kits and writes `assets/models/*.glb` plus `assets/catalogue.json`: id, name, category, tags, real-world footprint and height in metres, the scale factor that gets it to those dimensions, default kind if it is a natural fixture (lamps, TVs), and a thumbnail.
-- Source kits are not real-world scale and not consistent with each other; the scale factor in the catalogue is what fixes that. Every model must be checked by eye against a 2.4 m wall.
-- Materials are remapped to the Diorama palette at build time so both kits look like one set.
-- User uploads appear in the same drawer under "My models", with a dimension prompt on upload.
-- Budget: bundled assets under 15 MB total, any single model under 500 KB.
+Built (stage 5)
+
+- `tools/build_catalogue.py` writes `custom_components/diorama/assets/`: one `.glb` per model under `models/<source>/`, and `catalogue.json` listing each model's id, name, category, search tags, source, file, the box it fills in metres (width, depth, height and where the middle of that box is from the model's origin), whether it stands against a wall or hangs from the ceiling, and the kind of fixture it naturally is (lamps, the TV, the radiator). The output is committed, and a test fails if it is not what the tool builds.
+- The bundled set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
+- Model format: one mesh, `POSITION`, `NORMAL` and `COLOR_0`, no textures; metres, +Y up, standing on y = 0, front facing +Z. The loader in the frontend accepts any `.glb` and reduces it to that (meshes merged, material colours baked into vertex colours, textures ignored), so other kits and uploads go through the same path.
+- Pictures for the drawer are drawn in the browser from the models themselves, so there are no thumbnail files to keep in step.
+- Only CC0 models are bundled; a test checks every model's source says so. Sources and licences are listed in `CREDITS.md`.
+
+Not done
+
+- The Kenney Furniture Kit and Quaternius furniture (both CC0) were the plan for the bundled set. The Kenney kit could not be fetched automatically: the site hands out its download through a signed link behind a "continue without donating" step, and scripting round that is not something to do without the owner's say. To add it, download the kit by hand, and extend `tools/build_catalogue.py` to read its `.glb` files, set each model's real-world scale (the kits are not at real scale or consistent with each other), remap materials to the palette, and check every model by eye against a 2.4 m wall. Quaternius has not been looked at.
+- User uploads ("My models", with a dimension prompt) come in stage 10.
+- Budget: bundled assets under 15 MB total, any single model under 500 kB (the second is tested).
 
 ## 11. Quality, testing and release
 
@@ -281,6 +291,7 @@ Stages 1 to 7 are the first public alpha.
 - Entity state and service calls go through the frontend `hass` object and WebSocket, never polling.
 - Scene stored per floor so a room card loads only what it needs.
 - Locks never toggle on tap; garage doors ask first.
+- The bundled furniture is Diorama's own set for now, not Kenney's (section 10).
 - Removing the integration keeps the stored house. Deleting a floor is its own explicit command and cannot happen as a side effect of saving the floor list.
 - Ids (floors, vertices, walls and so on) are made by the client: lowercase letters, digits and underscores, at most 32 characters.
 
@@ -302,6 +313,7 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - None of the integration categories fits a dashboard tool, so the manifest has no `categories`. The HACS action reports that as a warning, not a failure.
 - In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
 - The version goes in the path of the frontend's URL, not in `?v=`. Chunks import each other by relative path, which drops a query string; the browser then saw `diorama-panel.js` and `diorama-panel.js?v=...` as two modules, ran the entry twice and failed on defining its elements again. This only showed once a lazily loaded chunk (the 3D view) shared code with the entry.
+- Vertex colours are linear in three.js and in glTF. Colours in the code are written as they should look (sRGB) and converted where the geometry is handed to three.js, or by the catalogue tool. Before that, stage 4's walls and floors were paler than their colours.
 - In a `css` tagged template an escape such as `\33 d` (a class starting with a digit) is an invalid escape: the whole stylesheet silently becomes `undefined` and the element fails to render. Typecheck, lint and tests do not catch it. Avoid class names that need escaping.
 - Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.

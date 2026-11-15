@@ -11,6 +11,7 @@ import {
   type Point,
 } from "./geometry";
 import { newId, type MakeId } from "./ids";
+import { assignItemRooms } from "./items";
 import { detectRooms } from "./rooms";
 import type { Floor, Opening, Vertex, Wall } from "./scene";
 
@@ -32,9 +33,8 @@ export function commit(floor: Floor, makeId: MakeId = newId): Floor {
   return {
     ...tidy,
     rooms,
-    items: tidy.items.map((item) =>
-      item.room !== null && !roomIds.has(item.room) ? { ...item, room: null } : item,
-    ),
+    // Furniture belongs to whichever room it now stands in.
+    items: assignItemRooms({ ...tidy, rooms }).items,
     fixtures: tidy.fixtures.map((fixture) => {
       const room = fixture.room !== null && !roomIds.has(fixture.room) ? null : fixture.room;
       const item = fixture.item !== null && !itemIds.has(fixture.item) ? null : fixture.item;

@@ -1,5 +1,6 @@
 import { css, html, LitElement, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import type { Catalogue } from "../core/catalogue";
 import { hexColour, type Colour } from "../core/mesh";
 import { deviceHints, pickQuality, type Quality } from "../core/quality";
 import { themeStyles } from "../shared/theme";
@@ -9,6 +10,8 @@ import { SceneRenderer, type SceneFloor } from "./scene-renderer";
 @customElement("diorama-scene-view")
 export class DioramaSceneView extends LitElement {
   @property({ attribute: false }) floors: readonly SceneFloor[] = [];
+  /** Where furniture models come from. */
+  @property({ attribute: false }) catalogue?: Catalogue;
   /** A room to pick out, by id. */
   @property({ attribute: false }) highlightRoom: string | null = null;
   /** Leave unset to choose by device. */
@@ -66,12 +69,15 @@ export class DioramaSceneView extends LitElement {
       this.show();
       return;
     }
-    if (changed.has("floors") || changed.has("highlightRoom")) this.show();
+    if (changed.has("floors") || changed.has("highlightRoom") || changed.has("catalogue")) {
+      this.show();
+    }
   }
 
   private show(): void {
     this.renderer?.setContent({
       floors: this.floors,
+      catalogue: this.catalogue,
       highlightRoom: this.highlightRoom,
       highlightColour: this.accent(),
     });

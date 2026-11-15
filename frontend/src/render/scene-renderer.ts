@@ -3,16 +3,22 @@
 
 import {
   AmbientLight,
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
+  Color,
   DirectionalLight,
+  Euler,
   Group,
   HemisphereLight,
+  InstancedMesh,
+  Matrix4,
   Mesh,
   MeshLambertMaterial,
   PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   Scene,
   ShadowMaterial,
   SRGBColorSpace,
@@ -20,9 +26,11 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
 import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
 import { QUALITY, type Quality } from "../core/quality";
-import type { Floor } from "../core/scene";
+import type { Floor, Item } from "../core/scene";
+import { loadedModel, loadModel } from "./models";
 import { FLOOR_COLOURS, OUTSIDE_COLOUR, WALL_TOP_COLOUR } from "./palette";
 
 export interface SceneFloor {
@@ -33,6 +41,8 @@ export interface SceneFloor {
 
 export interface SceneContent {
   floors: readonly SceneFloor[];
+  /** Where furniture models come from. Without it, furniture is not drawn. */
+  catalogue?: Catalogue;
   highlightRoom?: string | null;
   highlightColour?: Colour;
 }
@@ -51,6 +61,12 @@ export class SceneRenderer {
   private readonly ground: Mesh;
   private readonly wallMaterial = new MeshLambertMaterial({ vertexColors: true });
   private readonly slabMaterial = new MeshLambertMaterial({ vertexColors: true });
+  private readonly itemMaterial = new MeshLambertMaterial({ vertexColors: true });
+  private readonly unknownMaterial = new MeshLambertMaterial({ color: 0xb8bcc2 });
+  private readonly unknownGeometry = new BoxGeometry(0.5, 0.5, 0.5).translate(0, 0.25, 0);
+  /** Goes up with every setContent: a model that arrives late knows whether
+   * the scene it was for is still the one shown. */
+  private generation = 0;
   private readonly quality: Quality;
 
   private frameRequest = 0;
@@ -110,10 +126,8 @@ export class SceneRenderer {
   /** Replace what is shown. The camera stays where it is unless the set of
    * floors changed or nothing was shown before. */
   setContent(content: SceneContent): void {
-    for (const child of [...this.house.children]) {
-      this.house.remove(child);
-      if (child instanceof Mesh) child.geometry.dispose();
-    }
+    this.generation++;
+    this.clearHouse();
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (const { floor, elevation } of content.floors) {
@@ -126,6 +140,7 @@ export class SceneRenderer {
       });
       this.addMesh(mesh.slabs, this.slabMaterial, elevation, false);
       this.addMesh(mesh.walls, this.wallMaterial, elevation, true);
+      this.addItems(floor.items, elevation, content.catalogue);
       if (mesh.bounds) {
         min.min(new Vector3(mesh.bounds.min[0], mesh.bounds.min[1] + elevation, mesh.bounds.min[2]));
         max.max(new Vector3(mesh.bounds.max[0], mesh.bounds.max[1] + elevation, mesh.bounds.max[2]));
@@ -183,9 +198,10 @@ export class SceneRenderer {
     this.controls.removeEventListener("change", this.requestRender);
     this.controls.removeEventListener("start", this.onCameraMoved);
     this.controls.dispose();
-    for (const child of this.house.children) {
-      if (child instanceof Mesh) child.geometry.dispose();
-    }
+    this.clearHouse();
+    this.itemMaterial.dispose();
+    this.unknownMaterial.dispose();
+    this.unknownGeometry.dispose();
     this.ground.geometry.dispose();
     (this.ground.material as ShadowMaterial).dispose();
     this.wallMaterial.dispose();
@@ -204,11 +220,91 @@ export class SceneRenderer {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(data.positions), 3));
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(data.normals), 3));
-    geometry.setAttribute("color", new BufferAttribute(new Float32Array(data.colours), 3));
+    // Colours are written as they should look on screen; the renderer works
+    // in linear light.
+    const colours = new Float32Array(data.colours.length);
+    const colour = new Color();
+    for (let i = 0; i < colours.length; i += 3) {
+      colour.setRGB(data.colours[i], data.colours[i + 1], data.colours[i + 2], SRGBColorSpace);
+      colours[i] = colour.r;
+      colours[i + 1] = colour.g;
+      colours[i + 2] = colour.b;
+    }
+    geometry.setAttribute("color", new BufferAttribute(colours, 3));
     const mesh = new Mesh(geometry, material);
     mesh.position.y = elevation;
     mesh.castShadow = castShadow;
     mesh.receiveShadow = true;
+    mesh.userData.ownsGeometry = true;
+    this.house.add(mesh);
+  }
+
+  private clearHouse(): void {
+    for (const child of [...this.house.children]) {
+      this.house.remove(child);
+      if (child instanceof InstancedMesh) child.dispose();
+      // Furniture geometry is shared and cached; walls and floors are ours.
+      else if (child instanceof Mesh && child.userData.ownsGeometry) child.geometry.dispose();
+    }
+  }
+
+  /** Draw the furniture of one floor: one instanced mesh per model. */
+  private addItems(items: readonly Item[], elevation: number, catalogue?: Catalogue): void {
+    if (!catalogue || items.length === 0) return;
+    const byModel = new Map<string, Item[]>();
+    for (const item of items) byModel.set(item.model, [...(byModel.get(item.model) ?? []), item]);
+    for (const [modelId, group] of byModel) {
+      const model = findModel(catalogue, modelId);
+      if (!model) {
+        this.addInstances(this.unknownGeometry, this.unknownMaterial, group, elevation);
+        continue;
+      }
+      const url = modelUrl(catalogue, model);
+      const ready = loadedModel(url);
+      if (ready) {
+        this.addInstances(ready, this.itemMaterial, group, elevation);
+        continue;
+      }
+      const generation = this.generation;
+      loadModel(url).then(
+        (geometry) => {
+          if (this.disposed || generation !== this.generation) return;
+          this.addInstances(geometry, this.itemMaterial, group, elevation);
+          this.requestRender();
+        },
+        (error) => {
+          console.warn(`Diorama: could not load the model ${modelId}`, error);
+          if (this.disposed || generation !== this.generation) return;
+          this.addInstances(this.unknownGeometry, this.unknownMaterial, group, elevation);
+          this.requestRender();
+        },
+      );
+    }
+  }
+
+  private addInstances(
+    geometry: BufferGeometry,
+    material: MeshLambertMaterial,
+    items: readonly Item[],
+    elevation: number,
+  ): void {
+    const mesh = new InstancedMesh(geometry, material, items.length);
+    const matrix = new Matrix4();
+    const position = new Vector3();
+    const turn = new Quaternion();
+    const scale = new Vector3();
+    items.forEach((item, index) => {
+      position.set(item.x, elevation + item.z, item.y);
+      // The plan turns clockwise seen from above; three.js turns the other way.
+      turn.setFromEuler(new Euler(0, (-item.rotation * Math.PI) / 180, 0));
+      scale.setScalar(item.scale);
+      mesh.setMatrixAt(index, matrix.compose(position, turn, scale));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    // Instances are spread about; the model's own bounds would cull them.
+    mesh.frustumCulled = false;
     this.house.add(mesh);
   }
 

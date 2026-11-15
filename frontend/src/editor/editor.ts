@@ -3,12 +3,15 @@ import { customElement, property, query, state } from "lit/decorators.js";
 import { DioramaApi, errorMessage, isConflict } from "../core/api";
 import { browserStorage, clearDraft, loadDraft, saveDraft, type Draft } from "../core/draft";
 import { History } from "../core/history";
+import { EMPTY_CATALOGUE, type Catalogue, type CatalogueModel } from "../core/catalogue";
+import { deleteItems, duplicateItems, rotateItems, ROTATE_STEP } from "../core/items";
 import { deleteVertices, deleteWalls } from "../core/plan";
 import type { Floor, SceneEvent } from "../core/scene";
 import type { UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
+import "./catalogue-drawer";
 import "./inspector";
 import "./plan-view";
 import type { DioramaPlanView, Tool } from "./plan-view";
@@ -49,6 +52,9 @@ export class DioramaEditor extends LitElement {
   @state() private conflict = false;
   /** Unsaved edits found from an earlier visit. */
   @state() private draftOffer?: Draft;
+  @state() private catalogue: Catalogue = EMPTY_CATALOGUE;
+  /** The piece of furniture the next click in the plan will place. */
+  @state() private placing?: CatalogueModel;
   @state() private viewMode: ViewMode = "split";
   /** The 3D view's code has arrived. It is only fetched when first shown. */
   @state() private sceneLoaded = false;
@@ -147,6 +153,13 @@ export class DioramaEditor extends LitElement {
     this.flushDraft();
     this.loadedId = floorId;
     this.loadError = undefined;
+    if (this.catalogue === EMPTY_CATALOGUE) {
+      // The plan works without it: furniture is then drawn as plain squares.
+      void api.getCatalogue().then(
+        (catalogue) => (this.catalogue = catalogue),
+        (error) => console.warn("Diorama: the furniture catalogue did not load", error),
+      );
+    }
     this.floor = undefined;
     this.saved = undefined;
     try {
@@ -250,14 +263,29 @@ export class DioramaEditor extends LitElement {
   private deleteSelection(): void {
     const floor = this.floor;
     if (!floor || isEmpty(this.selection)) return;
-    let result = deleteWalls(floor, new Set(this.selection.walls));
+    let result = deleteItems(floor, new Set(this.selection.items));
+    result = deleteWalls(result, new Set(this.selection.walls));
     result = deleteVertices(result, new Set(this.selection.vertices));
     this.applyEdit(result);
   }
 
+  private rotateSelection(degrees: number): void {
+    if (!this.floor || this.selection.items.length === 0) return;
+    this.applyEdit(rotateItems(this.floor, new Set(this.selection.items), degrees));
+  }
+
+  private duplicateSelection(): void {
+    if (!this.floor || this.selection.items.length === 0) return;
+    const copied = duplicateItems(this.floor, new Set(this.selection.items));
+    this.applyEdit(copied.floor);
+    // The copies are selected, ready to be dragged into place.
+    this.selection = { ...NO_SELECTION, items: copied.ids };
+  }
+
   private setTool(tool: Tool): void {
     this.tool = tool;
-    if (tool === "wall") this.selection = NO_SELECTION;
+    if (tool !== "select") this.selection = NO_SELECTION;
+    if (tool !== "furniture") this.placing = undefined;
   }
 
   // Drafts.
@@ -312,6 +340,9 @@ export class DioramaEditor extends LitElement {
       } else if (lower === "s") {
         event.preventDefault();
         void this.save();
+      } else if (lower === "d") {
+        event.preventDefault();
+        this.duplicateSelection();
       }
       return;
     }
@@ -321,10 +352,15 @@ export class DioramaEditor extends LitElement {
       return;
     }
     if (key === "Escape") {
-      if (!this.plan?.cancel()) {
-        if (this.tool !== "select") this.setTool("select");
-        else this.selection = NO_SELECTION;
-      }
+      if (this.plan?.cancel()) return;
+      if (this.placing) this.placing = undefined;
+      else if (this.tool !== "select") this.setTool("select");
+      else this.selection = NO_SELECTION;
+    } else if (key.toLowerCase() === "r") {
+      const step = event.shiftKey ? -ROTATE_STEP : ROTATE_STEP;
+      if (!this.plan?.rotatePlacing(step)) this.rotateSelection(step);
+    } else if (key.toLowerCase() === "f" && !this.plan?.drawing) {
+      this.setTool("furniture");
     } else if (key === "Delete" || key === "Backspace") {
       event.preventDefault();
       this.deleteSelection();
@@ -364,10 +400,13 @@ export class DioramaEditor extends LitElement {
     return html`
       <div class="stage mode-${mode}">
         <div class="pane plan-pane" ?hidden=${mode === "3d"}>
+          ${this.renderDrawer()}
           <diorama-plan-view
             .floor=${this.floor}
             .tool=${this.tool}
             .selection=${this.selection}
+            .catalogue=${this.catalogue}
+            .placing=${this.placing}
             .units=${this.units}
             @plan-edit=${(event: CustomEvent<{ floor: Floor }>) =>
               this.applyEdit(event.detail.floor)}
@@ -386,10 +425,13 @@ export class DioramaEditor extends LitElement {
             .floor=${this.floor}
             .selection=${this.selection}
             .hass=${this.hass}
+            .catalogue=${this.catalogue}
             .units=${this.units}
             @inspector-edit=${(event: CustomEvent<{ floor: Floor }>) =>
               this.applyEdit(event.detail.floor)}
             @inspector-delete=${this.deleteSelection}
+            @inspector-rotate=${() => this.rotateSelection(ROTATE_STEP)}
+            @inspector-duplicate=${this.duplicateSelection}
           ></diorama-inspector>`}
     `;
   }
@@ -403,6 +445,7 @@ export class DioramaEditor extends LitElement {
     if (!this.sceneLoaded) return html`<p class="pane-message">Loading the 3D view...</p>`;
     return html`<diorama-scene-view
       .floors=${this.sceneFloors}
+      .catalogue=${this.catalogue}
       .highlightRoom=${this.selection.room}
     ></diorama-scene-view>`;
   }
@@ -435,6 +478,7 @@ export class DioramaEditor extends LitElement {
         ${this.mode === "3d"
           ? nothing
           : html`${tool("select", "Select and move", "V")} ${tool("wall", "Draw walls", "W")}
+              ${tool("furniture", "Add furniture", "F")}
               <span class="divider"></span>`}
         <button
           title="Undo (Ctrl+Z)"
@@ -459,9 +503,24 @@ export class DioramaEditor extends LitElement {
     `;
   }
 
+  /** The furniture list, docked beside the plan so that it covers none of it. */
+  private renderDrawer(): TemplateResult | typeof nothing {
+    if (this.narrow || this.tool !== "furniture") return nothing;
+    return html`<div class="dock">
+      <diorama-catalogue-drawer
+        .catalogue=${this.catalogue}
+        .picked=${this.placing}
+        .units=${this.units}
+        @catalogue-pick=${(event: CustomEvent<{ model?: CatalogueModel }>) =>
+          (this.placing = event.detail.model)}
+        @catalogue-close=${() => this.setTool("select")}
+      ></diorama-catalogue-drawer>
+    </div>`;
+  }
+
   /** What sits over the plan itself: the nudge to start, and the tool's hint. */
   private renderPlanOverlays(): TemplateResult | typeof nothing {
-    if (this.narrow) return nothing;
+    if (this.narrow || this.tool === "furniture") return nothing;
     if (this.floor && this.floor.walls.length === 0 && this.tool === "select") {
       return html`
         <div class="start">
@@ -583,7 +642,10 @@ export class DioramaEditor extends LitElement {
       .stage.mode-3d .scene-pane {
         border-left: 0;
       }
-      diorama-plan-view,
+      diorama-plan-view {
+        flex: 1;
+        min-width: 0;
+      }
       diorama-scene-view {
         position: absolute;
         inset: 0;
@@ -711,6 +773,21 @@ export class DioramaEditor extends LitElement {
       .hint.narrow {
         bottom: 64px;
         max-width: calc(100% - 32px);
+      }
+      .plan-pane {
+        display: flex;
+      }
+      .dock {
+        flex: none;
+        display: flex;
+        box-sizing: border-box;
+        width: 292px;
+        /* Clear of the toolbar above. */
+        padding: 76px 8px 16px 16px;
+      }
+      diorama-catalogue-drawer {
+        flex: 1;
+        min-width: 0;
       }
       .start {
         position: absolute;

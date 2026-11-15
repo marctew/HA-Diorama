@@ -1,6 +1,7 @@
 // The integration's WebSocket commands, typed. Reading is open to every user;
 // saving, deleting, export and import need an administrator.
 
+import type { Catalogue } from "./catalogue";
 import type { Floor, House, HouseExport, HouseInput, SceneEvent } from "./scene";
 
 /** The two methods of Home Assistant's `hass` object that the API needs. */
@@ -71,6 +72,13 @@ export class DioramaApi {
       data,
     });
     return result.house;
+  }
+
+  async getCatalogue(): Promise<Catalogue> {
+    const result = await this.transport.callWS<{ catalogue: Catalogue }>({
+      type: "diorama/catalogue/get",
+    });
+    return result.catalogue;
   }
 
   /** Be told whenever something is saved. Resolves to a function that stops it. */

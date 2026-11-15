@@ -1,9 +1,11 @@
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { EMPTY_CATALOGUE, findModel, type Catalogue } from "../core/catalogue";
 import { distance, polygonArea, polygonPerimeter } from "../core/geometry";
+import { ROTATE_STEP, updateItems } from "../core/items";
 import { commit, moveVertices, setWallLength, setWallThickness } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Floor, Room } from "../core/scene";
+import type { Floor, Item, Room } from "../core/scene";
 import {
   formatArea,
   formatLength,
@@ -14,7 +16,7 @@ import {
 import { themeStyles } from "../shared/theme";
 import type { HassArea, HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
-import type { Selection } from "./selection";
+import { selectionCount, type Selection } from "./selection";
 
 export const FLOOR_STYLES: readonly { id: string; name: string }[] = [
   { id: "default", name: "Plain" },
@@ -42,18 +44,23 @@ export class DioramaInspector extends LitElement {
   @property({ attribute: false }) floor?: Floor;
   @property({ attribute: false }) selection?: Selection;
   @property({ attribute: false }) hass?: HomeAssistant;
+  @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
   @property() units: UnitSystem = "metric";
 
   protected override render(): TemplateResult | typeof nothing {
     const floor = this.floor;
     const selection = this.selection;
     if (!floor || !selection) return nothing;
-    const count = selection.vertices.length + selection.walls.length;
+    const count = selectionCount(selection);
     if (selection.room !== null) {
       const room = floor.rooms.find((candidate) => candidate.id === selection.room);
       if (room) return this.renderRoom(floor, room);
     }
-    if (count > 1) return this.renderSeveral(count);
+    if (count > 1) return this.renderSeveral(count, selection);
+    if (selection.items.length === 1) {
+      const item = floor.items.find((candidate) => candidate.id === selection.items[0]);
+      if (item) return this.renderItem(floor, item);
+    }
     if (selection.walls.length === 1) return this.renderWall(floor, selection.walls[0]);
     if (selection.vertices.length === 1) return this.renderVertex(floor, selection.vertices[0]);
     return this.renderFloor(floor);
@@ -218,11 +225,83 @@ export class DioramaInspector extends LitElement {
     `;
   }
 
-  private renderSeveral(count: number): TemplateResult {
+  private renderSeveral(count: number, selection: Selection): TemplateResult {
     return html`
       <h2>${count} selected</h2>
       <p class="help">Drag any of them to move them together.</p>
+      ${selection.items.length > 0 ? this.renderItemActions() : nothing}
       ${this.renderDelete("Delete selected")}
+    `;
+  }
+
+  private renderItem(floor: Floor, item: Item): TemplateResult {
+    const model = findModel(this.catalogue, item.model);
+    const room = floor.rooms.find((candidate) => candidate.id === item.room);
+    const change = (patch: Partial<Item>) =>
+      this.edit(updateItems(floor, new Set([item.id]), () => patch));
+    const number = (
+      label: string,
+      current: number,
+      step: number,
+      apply: (value: number) => void,
+      limit = 1000,
+    ) => html`
+      <label>
+        <span>${label}</span>
+        <input
+          type="number"
+          step=${step}
+          .value=${String(Number(current.toFixed(3)))}
+          @change=${(event: Event) => {
+            const entered = Number(value(event));
+            if (value(event) !== "" && Number.isFinite(entered) && Math.abs(entered) <= limit) {
+              apply(entered);
+            }
+          }}
+        />
+      </label>
+    `;
+    return html`
+      <h2>${model?.name ?? "Unknown furniture"}</h2>
+      ${model
+        ? nothing
+        : html`<p class="help">
+            The catalogue has no model called ${item.model}. It is shown as a grey box.
+          </p>`}
+      <div class="pair">
+        ${number("Across (m)", item.x, 0.05, (x) => change({ x }))}
+        ${number("Down (m)", item.y, 0.05, (y) => change({ y }))}
+      </div>
+      <div class="pair">
+        ${number("Turned (degrees)", item.rotation, ROTATE_STEP, (rotation) => change({ rotation }), 720)}
+        ${number("Size (%)", item.scale * 100, 5, (percent) => {
+          if (percent >= 5 && percent <= 2000) change({ scale: percent / 100 });
+        }, 2000)}
+      </div>
+      <dl>
+        <dt>Room</dt>
+        <dd>${room ? room.name || "Unnamed room" : "None"}</dd>
+        ${model
+          ? html`<dt>Size</dt>
+              <dd>
+                ${formatLength(model.width * item.scale, this.units)} ×
+                ${formatLength(model.depth * item.scale, this.units)}
+              </dd>`
+          : nothing}
+      </dl>
+      <div class="actions">${this.renderItemActions()} ${this.renderDelete("Delete")}</div>
+    `;
+  }
+
+  private renderItemActions(): TemplateResult {
+    const fire = (name: string) => () => this.dispatchEvent(new CustomEvent(name));
+    return html`
+      <button class="plain" title="Turn a step (R)" @click=${fire("inspector-rotate")}>
+        ${icon("rotate")} Turn
+      </button>
+      <button class="plain" title="Duplicate (Ctrl+D)" @click=${fire("inspector-duplicate")}>
+        ${icon("copy")} Duplicate
+      </button>
     `;
   }
 
@@ -256,12 +335,14 @@ export class DioramaInspector extends LitElement {
       </dl>
       <h3>Drawing</h3>
       <ul class="tips">
-        <li><kbd>W</kbd> draw walls, <kbd>V</kbd> select</li>
+        <li><kbd>W</kbd> draw walls, <kbd>F</kbd> furniture, <kbd>V</kbd> select</li>
         <li>Click to place each corner; close the loop to make a room</li>
         <li>Type a length and press <kbd>Enter</kbd> for an exact wall</li>
         <li><kbd>Esc</kbd> or right-click ends a run of walls</li>
         <li>Hold <kbd>Alt</kbd> to switch snapping off</li>
         <li>Drag the background to move around, scroll to zoom</li>
+        <li><kbd>Shift</kbd>+drag selects everything in a box</li>
+        <li><kbd>R</kbd> turns furniture, <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates it</li>
         <li><kbd>Del</kbd> deletes, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes</li>
       </ul>
     `;
@@ -421,6 +502,34 @@ export class DioramaInspector extends LitElement {
         font: inherit;
         font-size: 11px;
         color: var(--diorama-text);
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 16px;
+      }
+      .actions .danger,
+      .actions .plain {
+        margin-top: 0;
+      }
+      .plain {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        margin-right: 6px;
+        height: 36px;
+        padding: 0 12px 0 8px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
+        border-radius: 8px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .plain:hover {
+        background: color-mix(in srgb, var(--diorama-text) 8%, transparent);
       }
       .danger {
         display: inline-flex;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_SELECTION, isEmpty, prune, toggle } from "../src/editor/selection";
+import { NO_SELECTION, isEmpty, prune, selectionCount, toggle } from "../src/editor/selection";
 import { fit, gridStep, scaleBarLength, toScreen, toWorld, zoomAt } from "../src/editor/view";
 import { counter, emptyFloor, rectangle } from "./helpers";
 
@@ -71,12 +71,12 @@ describe("selection", () => {
 
   it("drops what the floor no longer has", () => {
     const floor = rectangle(emptyFloor(), counter(), 0, 0, 4, 3);
-    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], room: floor.rooms[0].id };
-    expect(prune(kept, floor)).toBe(kept);
-    expect(prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], room: "gone" }, floor)).toEqual({
-      vertices: [floor.vertices[0].id],
-      walls: [],
-      room: null,
-    });
+    const withSofa = { ...floor, items: [{ id: "i1", model: "basics/sofa_2", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: null }] };
+    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], room: floor.rooms[0].id };
+    expect(prune(kept, withSofa)).toBe(kept);
+    expect(
+      prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], items: ["i1", "i9"], room: "gone" }, withSofa),
+    ).toEqual({ vertices: [floor.vertices[0].id], walls: [], items: ["i1"], room: null });
+    expect(selectionCount(kept)).toBe(3);
   });
 });

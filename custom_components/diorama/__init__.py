@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import logging
+from typing import Any
 
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
@@ -15,7 +17,10 @@ from homeassistant.util.hass_dict import HassKey
 
 from . import websocket_api
 from .const import (
+    ASSETS_DIR,
+    ASSETS_URL,
     CARD_FILE,
+    CATALOGUE_FILE,
     DOMAIN,
     FRONTEND_DIR,
     PANEL_ELEMENT,
@@ -40,6 +45,7 @@ class DioramaData:
 
     card_url: str
     store: DioramaStore
+    catalogue: dict[str, Any]
 
 
 type DioramaConfigEntry = ConfigEntry[DioramaData]
@@ -69,7 +75,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
             [
                 StaticPathConfig(
                     frontend_url(version), str(FRONTEND_DIR), cache_headers=True
-                )
+                ),
+                StaticPathConfig(
+                    assets_url(version), str(ASSETS_DIR), cache_headers=True
+                ),
             ]
         )
         hass.data[DATA_STATIC_REGISTERED] = True
@@ -87,7 +96,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
 
     card_url = versioned_url(CARD_FILE, version)
     frontend.add_extra_js_url(hass, card_url)
-    entry.runtime_data = DioramaData(card_url=card_url, store=store)
+    catalogue = await hass.async_add_executor_job(_read_catalogue, version)
+    entry.runtime_data = DioramaData(
+        card_url=card_url, store=store, catalogue=catalogue
+    )
     return True
 
 
@@ -106,6 +118,21 @@ def frontend_url(version: str) -> str:
     see the entry file under two addresses and run it twice.
     """
     return f"{STATIC_URL}/{version}"
+
+
+def assets_url(version: str) -> str:
+    """Return where this version's bundled models are served."""
+    return f"{ASSETS_URL}/{version}"
+
+
+def _read_catalogue(version: str) -> dict[str, Any]:
+    """Read the bundled catalogue and say where its files are served."""
+    try:
+        catalogue = json.loads((ASSETS_DIR / CATALOGUE_FILE).read_text())
+    except (OSError, ValueError) as err:
+        _LOGGER.error("The Diorama furniture catalogue could not be read: %s", err)
+        catalogue = {"version": 1, "sources": [], "models": []}
+    return {**catalogue, "base_url": assets_url(version)}
 
 
 def versioned_url(filename: str, version: str) -> str:

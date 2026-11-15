@@ -1,5 +1,7 @@
 import type { Colour } from "../core/mesh";
 
+// Colours here are written as they should look on screen (sRGB, 0 to 1).
+
 /** Flat colours for the floor finishes the inspector offers. */
 export const FLOOR_COLOURS: Readonly<Record<string, Colour>> = {
   default: [0.86, 0.84, 0.79],

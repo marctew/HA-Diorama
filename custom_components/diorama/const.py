@@ -14,3 +14,9 @@ STATIC_URL = "/diorama_static"
 FRONTEND_DIR = Path(__file__).parent / "frontend" / "dist"
 PANEL_FILE = "diorama-panel.js"
 CARD_FILE = "diorama-card.js"
+
+# The bundled furniture catalogue, made by tools/build_catalogue.py. Public,
+# like the frontend: only CC0 models are in it.
+ASSETS_URL = "/diorama_assets"
+ASSETS_DIR = Path(__file__).parent / "assets"
+CATALOGUE_FILE = "catalogue.json"
