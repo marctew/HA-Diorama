@@ -55,7 +55,7 @@ An update to Diorama needs a restart of Home Assistant; the first install does n
 
 ### Your own models
 
-At the bottom of the furniture list, **Add a model** takes a binary glTF file (`.glb`). You are shown the model and asked for its real size, since files rarely say; set the one dimension you know and the others follow. It is kept without its textures, in flat colours, so it matches the rest and stays small. Only add models you have the right to use.
+At the bottom of the furniture list, **Add a model** takes a binary glTF file (`.glb`). You are shown the model and asked for its real size, since files rarely say; set the one dimension you know and the others follow. Compressed models (Draco or Meshopt, as furniture shops publish them) are read too. A model is kept in flat colours, each face taking the colour of its texture there, so it matches the rest and stays small. Only add models you have the right to use.
 
 Models live in `diorama/models` in your configuration folder and are included in Home Assistant backups. Exporting a house does not include them.
 

@@ -126,3 +126,12 @@ describe("a catalogue with models of your own", () => {
     expect(findModel(catalogue, own.id)).toBe(own);
   });
 });
+
+describe("where the decoder for compressed models is", () => {
+  it("is the draco folder beside the entry files, whichever file asks", async () => {
+    const { decoderPath } = await import("../src/core/decoder");
+    const base = "http://ha.local:8123/diorama_static/0.4.1/";
+    expect(decoderPath(`${base}chunks/model-import-Bb28jfp7.js`)).toBe(`${base}draco/`);
+    expect(decoderPath(`${base}diorama-panel.js`)).toBe(`${base}draco/`);
+  });
+});

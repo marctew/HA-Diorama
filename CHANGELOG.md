@@ -2,6 +2,11 @@
 
 The notes of each release are what Home Assistant shows on Diorama's update. Anything that needs you to do something goes first.
 
+## 0.4.1
+
+- Compressed models can be added: the ones furniture shops such as IKEA publish would not read before.
+- A model you add takes its colours from its textures, rather than coming out white where it had no other colour.
+
 ## 0.4.0
 
 - New pieces: a spring-arm desk lamp, light panels for a wall (triangles and a hexagon), enclosed 3D printers in two sizes with or without a filament box, and a sim racing rig with one screen or three.

@@ -176,8 +176,8 @@ export class DioramaModelDialog extends LitElement {
         </div>
       </div>
       <p class="note small">
-        Say it is a light and a light dropped on it becomes it, and glows. It is kept without its
-        textures, in flat colours like the rest. Its front should face
+        Say it is a light and a light dropped on it becomes it, and glows. It is kept in flat
+        colours like the rest, taken from its textures. Its front should face
         forwards in the file; you can turn each piece once it is placed.
       </p>
     `;
@@ -194,7 +194,7 @@ export class DioramaModelDialog extends LitElement {
       const body = await prepareModel(model, this.scale);
       if (body.byteLength > MODEL_MAX_BYTES) {
         throw new Error(
-          `Even without its textures this model is ${megabytes(body.byteLength)} MB; the most that can be kept is ${megabytes(MODEL_MAX_BYTES)} MB. Simplify it and try again.`,
+          `Even in flat colours this model is ${megabytes(body.byteLength)} MB; the most that can be kept is ${megabytes(MODEL_MAX_BYTES)} MB. Simplify it and try again.`,
         );
       }
       const response = await hass.fetchWithAuth(
