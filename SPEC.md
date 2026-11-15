@@ -179,7 +179,7 @@ Built (stage 3)
 Still to come
 
 - Placing furniture by dragging it out of the drawer, and into the 3D view. For now: pick, then click in the plan.
-- Moving the plan image by dragging it (its scale and first point can be set, not its position by hand), ghosted outlines of the floor below while drawing, stairwell cut-outs.
+- Ghosted outlines of the floor below while drawing, stairwell cut-outs.
 
 ## 7. Renderer
 
