@@ -526,7 +526,11 @@ export class DioramaEditor extends LitElement {
     if (!this.floor) return html`<div class="message"><p>Loading the floor...</p></div>`;
     const mode = this.mode;
     return html`
-      <div class="stage mode-${mode}">
+      <div
+        class="stage mode-${mode} ${!this.narrow && (this.tool === "device" || this.tool === "furniture")
+          ? "docked"
+          : ""}"
+      >
         <div class="pane plan-pane" ?hidden=${mode === "3d"}>
           ${this.renderDrawer()}
           <diorama-plan-view
@@ -931,6 +935,11 @@ export class DioramaEditor extends LitElement {
       }
       .stage.mode-split {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      /* A list docked beside the plan takes its room from the 3D side, not
+         from the plan, which would be left a sliver on a laptop. */
+      .stage.mode-split.docked {
+        grid-template-columns: minmax(min(72%, 640px), 1fr) minmax(0, 1fr);
       }
       .pane {
         position: relative;
