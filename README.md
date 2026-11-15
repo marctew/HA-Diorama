@@ -9,7 +9,7 @@ Your house in 3D in Home Assistant. Draw it floor by floor and room by room, fur
 ## What it does
 
 - **Draw**: walls with snapping and typed lengths, rooms found for you, doors and windows, several floors, and a plan image to trace over.
-- **Furnish**: 33 low-poly pieces are included, and you can add `.glb` models of your own.
+- **Furnish**: 90 low-poly pieces are included, and you can add `.glb` models of your own.
 - **Place devices**: lights, switches, fans, blinds and covers, door and window sensors, thermostats and temperature sensors, motion and presence, media players, locks, and any other sensor as a reading.
 - **Use it**: tap a light, switch or blind to work it; press and hold anything for its details. A garage door or gate asks first, and a lock is never worked by a tap.
 - **Dashboard card**: the whole house, a floor or a room, from any saved camera angle, on any device. It follows the sun, so the house is dark at night with the lights that are on showing.

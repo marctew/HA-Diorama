@@ -7,8 +7,9 @@ assets/catalogue.json. The output is committed, and a test checks that it
 matches what this tool makes, so run it after changing a model. Never edit
 the output by hand.
 
-Only CC0 models go in the bundle (SPEC.md section 10). So far that is
-Diorama's own basic set, built here from boxes and cylinders.
+Only CC0 models go in the bundle (SPEC.md section 10): Diorama's own basic
+set, built here from boxes and cylinders, and pieces from Kenney's Furniture
+Kit, rebuilt from the kit's files in tools/catalogue/kenney to the same form.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.catalogue import basics
+from tools.catalogue import basics, kenney
 from tools.catalogue.glb import Mesh, encode
 
 ASSETS = (
@@ -33,15 +34,26 @@ SOURCES = [
         "name": "Diorama basics",
         "author": "Diorama contributors",
         "licence": "CC0-1.0",
-    }
+    },
+    {
+        "id": "kenney",
+        "name": "Kenney Furniture Kit",
+        "author": "Kenney (www.kenney.nl)",
+        "licence": "CC0-1.0",
+    },
 ]
+
+# Each source's models, in the order the drawer shows them.
+SETS = (("basics", basics.MODELS), ("kenney", kenney.MODELS))
 
 
 def build() -> dict[str, bytes]:
     """Return every file of the catalogue, by path relative to the assets folder."""
     files: dict[str, bytes] = {}
     models = []
-    for model in basics.MODELS:
+    for source, model in (
+        (source, model) for source, models in SETS for model in models
+    ):
         mesh = Mesh()
         model.build(mesh)
         low, high = mesh.bounds()
@@ -49,14 +61,14 @@ def build() -> dict[str, bytes]:
             raise ValueError(f"{model.id} goes below the floor")
         if low[1] > 1e-6 and not model.hanging:
             raise ValueError(f"{model.id} floats {low[1]:.3f} m above the floor")
-        path = f"models/basics/{model.id}.glb"
+        path = f"models/{source}/{model.id}.glb"
         files[path] = encode(mesh, model.id)
         entry = {
-            "id": f"basics/{model.id}",
+            "id": f"{source}/{model.id}",
             "name": model.name,
             "category": model.category,
             "tags": list(model.tags),
-            "source": "basics",
+            "source": source,
             "file": path,
             # The box the model fills, in metres. It may sit off-centre.
             "width": round(high[0] - low[0], 3),

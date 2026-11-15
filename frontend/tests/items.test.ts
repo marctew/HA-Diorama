@@ -58,7 +58,10 @@ describe("catalogue", () => {
   });
 
   it("searches names, tags and categories, needing every word", () => {
-    expect(searchModels(catalogue, "couch").map((m) => m.id)).toEqual(["basics/sofa_2", "basics/sofa_3"]);
+    const couches = searchModels(catalogue, "couch").map((m) => m.id);
+    expect(couches.slice(0, 2)).toEqual(["basics/sofa_2", "basics/sofa_3"]);
+    expect(couches).toContain("kenney/sofa_corner");
+    expect(couches.every((id) => id.includes("sofa"))).toBe(true);
     expect(searchModels(catalogue, "BED king").map((m) => m.id)).toEqual(["basics/bed_king"]);
     expect(searchModels(catalogue, "bathroom").length).toBeGreaterThan(3);
     expect(searchModels(catalogue, "sofa lava")).toEqual([]);

@@ -269,14 +269,16 @@ Not done
 Built (stage 5)
 
 - `tools/build_catalogue.py` writes `custom_components/diorama/assets/`: one `.glb` per model under `models/<source>/`, and `catalogue.json` listing each model's id, name, category, search tags, source, file, the box it fills in metres (width, depth, height and where the middle of that box is from the model's origin), whether it stands against a wall or hangs from the ceiling, and the kind of fixture it naturally is (lamps, the TV, the radiator). The output is committed, and a test fails if it is not what the tool builds.
-- The bundled set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
+- The first set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
 - Model format: one mesh, `POSITION`, `NORMAL` and `COLOR_0`, no textures; metres, +Y up, standing on y = 0, front facing +Z. The loader in the frontend accepts any `.glb` and reduces it to that (meshes merged, material colours baked into vertex colours, textures ignored), so other kits and uploads go through the same path.
+- With it come 57 pieces of Kenney's Furniture Kit 2.0 (CC0), 90 models and about 2 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
 - Pictures for the drawer are drawn in the browser from the models themselves, so there are no thumbnail files to keep in step.
 - Only CC0 models are bundled; a test checks every model's source says so. Sources and licences are listed in `CREDITS.md`.
 
 Not done
 
-- The Kenney Furniture Kit and Quaternius furniture (both CC0) were the plan for the bundled set. The Kenney kit could not be fetched automatically: the site hands out its download through a signed link behind a "continue without donating" step, and scripting round that is not something to do without the owner's say. To add it, download the kit by hand, and extend `tools/build_catalogue.py` to read its `.glb` files, set each model's real-world scale (the kits are not at real scale or consistent with each other), remap materials to the palette, and check every model by eye against a 2.4 m wall. Quaternius has not been looked at.
+- Quaternius's furniture (CC0) has not been looked at.
+- Furniture cannot be put on a table or a wall: a piece has a height in the model but nothing sets it. That is why the kit's lamps for tables, its kitchen wall units, its appliances for the worktop and its screens are not taken.
 
 My models (stage 10)
 
@@ -326,7 +328,7 @@ All ten stages are built. What is left before the first release is in section 14
 - Entity state and service calls go through the frontend `hass` object and WebSocket, never polling.
 - Scene stored per floor so a room card loads only what it needs.
 - Locks never toggle on tap; garage doors ask first.
-- The bundled furniture is Diorama's own set for now, not Kenney's (section 10).
+- The bundled furniture is Diorama's own set and a chosen part of Kenney's Furniture Kit, rebuilt to one size, palette and format (section 10).
 - Removing the integration keeps the stored house. Deleting a floor is its own explicit command and cannot happen as a side effect of saving the floor list.
 - Ids (floors, vertices, walls and so on) are made by the client: lowercase letters, digits and underscores, at most 32 characters.
 

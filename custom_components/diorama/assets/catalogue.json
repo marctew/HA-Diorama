@@ -6,6 +6,12 @@
       "name": "Diorama basics",
       "author": "Diorama contributors",
       "licence": "CC0-1.0"
+    },
+    {
+      "id": "kenney",
+      "name": "Kenney Furniture Kit",
+      "author": "Kenney (www.kenney.nl)",
+      "licence": "CC0-1.0"
     }
   ],
   "models": [
@@ -625,6 +631,1104 @@
       "centre": [
         0.0,
         0.01
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/sofa_lounge",
+      "name": "Sofa, low",
+      "category": "Living room",
+      "tags": [
+        "couch",
+        "settee"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sofa_lounge.glb",
+      "width": 1.96,
+      "depth": 0.82,
+      "height": 0.92,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/sofa_chaise",
+      "name": "Sofa with a chaise",
+      "category": "Living room",
+      "tags": [
+        "couch",
+        "settee",
+        "corner"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sofa_chaise.glb",
+      "width": 1.96,
+      "depth": 1.64,
+      "height": 0.92,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/sofa_corner",
+      "name": "Sofa, corner",
+      "category": "Living room",
+      "tags": [
+        "couch",
+        "settee",
+        "l-shaped"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sofa_corner.glb",
+      "width": 1.96,
+      "depth": 1.96,
+      "height": 0.92,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/footstool",
+      "name": "Footstool",
+      "category": "Living room",
+      "tags": [
+        "ottoman",
+        "pouffe"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/footstool.glb",
+      "width": 0.88,
+      "depth": 0.9,
+      "height": 0.46,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/lounge_chair",
+      "name": "Armchair, low",
+      "category": "Living room",
+      "tags": [
+        "chair",
+        "seat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/lounge_chair.glb",
+      "width": 0.98,
+      "depth": 0.82,
+      "height": 0.92,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/recliner",
+      "name": "Recliner",
+      "category": "Living room",
+      "tags": [
+        "chair",
+        "armchair"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/recliner.glb",
+      "width": 0.98,
+      "depth": 1.349,
+      "height": 1.26,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/sofa_modern",
+      "name": "Sofa, modern",
+      "category": "Living room",
+      "tags": [
+        "couch",
+        "settee"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sofa_modern.glb",
+      "width": 2.24,
+      "depth": 0.82,
+      "height": 0.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/sofa_modern_corner",
+      "name": "Sofa, modern corner",
+      "category": "Living room",
+      "tags": [
+        "couch",
+        "settee",
+        "l-shaped"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sofa_modern_corner.glb",
+      "width": 2.7,
+      "depth": 2.7,
+      "height": 0.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/armchair_modern",
+      "name": "Loveseat, modern",
+      "category": "Living room",
+      "tags": [
+        "chair",
+        "seat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/armchair_modern.glb",
+      "width": 1.459,
+      "depth": 0.82,
+      "height": 0.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/coffee_table_glass",
+      "name": "Coffee table, glass",
+      "category": "Living room",
+      "tags": [
+        "table"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/coffee_table_glass.glb",
+      "width": 1.1,
+      "depth": 0.666,
+      "height": 0.383,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/coffee_table_square",
+      "name": "Coffee table, square",
+      "category": "Living room",
+      "tags": [
+        "table"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/coffee_table_square.glb",
+      "width": 0.7,
+      "depth": 0.7,
+      "height": 0.403,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/console_table",
+      "name": "Console table",
+      "category": "Living room",
+      "tags": [
+        "side table",
+        "hall"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/console_table.glb",
+      "width": 1.069,
+      "depth": 0.44,
+      "height": 0.769,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/sideboard",
+      "name": "Sideboard",
+      "category": "Living room",
+      "tags": [
+        "drawers",
+        "cabinet"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sideboard.glb",
+      "width": 1.069,
+      "depth": 0.445,
+      "height": 0.769,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/tv_cabinet",
+      "name": "TV cabinet",
+      "category": "Living room",
+      "tags": [
+        "television",
+        "unit",
+        "media"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/tv_cabinet.glb",
+      "width": 1.6,
+      "depth": 0.5,
+      "height": 0.62,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/bookcase_wide",
+      "name": "Bookcase, wide",
+      "category": "Living room",
+      "tags": [
+        "shelves",
+        "books"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bookcase_wide.glb",
+      "width": 1.6,
+      "depth": 0.4,
+      "height": 1.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/shelves_low",
+      "name": "Shelves, low",
+      "category": "Living room",
+      "tags": [
+        "bookcase",
+        "books"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/shelves_low.glb",
+      "width": 0.8,
+      "depth": 0.5,
+      "height": 0.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/cupboard",
+      "name": "Cupboard",
+      "category": "Living room",
+      "tags": [
+        "cabinet",
+        "storage"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/cupboard.glb",
+      "width": 0.85,
+      "depth": 0.45,
+      "height": 1.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/speaker",
+      "name": "Speaker",
+      "category": "Living room",
+      "tags": [
+        "hi-fi",
+        "music",
+        "media"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/speaker.glb",
+      "width": 0.233,
+      "depth": 0.233,
+      "height": 1.0,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "media"
+    },
+    {
+      "id": "kenney/rug_round",
+      "name": "Rug, round",
+      "category": "Living room",
+      "tags": [
+        "carpet",
+        "mat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/rug_round.glb",
+      "width": 1.6,
+      "depth": 1.6,
+      "height": 0.016,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/rug_large",
+      "name": "Rug, large",
+      "category": "Living room",
+      "tags": [
+        "carpet",
+        "mat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/rug_large.glb",
+      "width": 2.6,
+      "depth": 1.7,
+      "height": 0.016,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/plant_tall",
+      "name": "Plant, tall",
+      "category": "Living room",
+      "tags": [
+        "pot",
+        "houseplant"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/plant_tall.glb",
+      "width": 0.424,
+      "depth": 0.483,
+      "height": 1.308,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/plant_small",
+      "name": "Plant, small",
+      "category": "Living room",
+      "tags": [
+        "pot",
+        "houseplant"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/plant_small.glb",
+      "width": 0.338,
+      "depth": 0.338,
+      "height": 0.5,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/floor_lamp_round",
+      "name": "Floor lamp, round shade",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "standard lamp"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/floor_lamp_round.glb",
+      "width": 0.283,
+      "depth": 0.327,
+      "height": 1.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "light"
+    },
+    {
+      "id": "kenney/floor_lamp_square",
+      "name": "Floor lamp, square shade",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "standard lamp"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/floor_lamp_square.glb",
+      "width": 0.223,
+      "depth": 0.223,
+      "height": 1.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "light"
+    },
+    {
+      "id": "kenney/ceiling_light_square",
+      "name": "Ceiling light, square",
+      "category": "Lighting",
+      "tags": [
+        "pendant",
+        "light"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/ceiling_light_square.glb",
+      "width": 0.24,
+      "depth": 0.24,
+      "height": 2.4,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "hanging": true,
+      "kind": "light"
+    },
+    {
+      "id": "kenney/ceiling_fan",
+      "name": "Ceiling fan",
+      "category": "Lighting",
+      "tags": [
+        "fan"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/ceiling_fan.glb",
+      "width": 1.1,
+      "depth": 1.1,
+      "height": 2.4,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "hanging": true,
+      "kind": "switch"
+    },
+    {
+      "id": "kenney/base_unit_door",
+      "name": "Base unit, door",
+      "category": "Kitchen and dining",
+      "tags": [
+        "cupboard",
+        "worktop",
+        "cabinet"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/base_unit_door.glb",
+      "width": 0.6,
+      "depth": 0.62,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/base_unit_drawers",
+      "name": "Base unit, drawers",
+      "category": "Kitchen and dining",
+      "tags": [
+        "cupboard",
+        "worktop",
+        "cabinet"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/base_unit_drawers.glb",
+      "width": 0.6,
+      "depth": 0.62,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/base_unit_corner",
+      "name": "Base unit, corner",
+      "category": "Kitchen and dining",
+      "tags": [
+        "cupboard",
+        "worktop",
+        "cabinet"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/base_unit_corner.glb",
+      "width": 0.62,
+      "depth": 0.62,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/sink_unit",
+      "name": "Sink unit, mixer tap",
+      "category": "Kitchen and dining",
+      "tags": [
+        "tap",
+        "basin"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/sink_unit.glb",
+      "width": 0.6,
+      "depth": 0.62,
+      "height": 0.98,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/cooker_gas",
+      "name": "Cooker, gas",
+      "category": "Kitchen and dining",
+      "tags": [
+        "oven",
+        "hob",
+        "stove"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/cooker_gas.glb",
+      "width": 0.6,
+      "depth": 0.62,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/cooker_electric",
+      "name": "Cooker, electric",
+      "category": "Kitchen and dining",
+      "tags": [
+        "oven",
+        "hob",
+        "stove"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/cooker_electric.glb",
+      "width": 0.6,
+      "depth": 0.62,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/fridge_american",
+      "name": "Fridge freezer, double",
+      "category": "Kitchen and dining",
+      "tags": [
+        "refrigerator",
+        "american"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/fridge_american.glb",
+      "width": 0.9,
+      "depth": 0.7,
+      "height": 1.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/fridge_small",
+      "name": "Fridge, under the counter",
+      "category": "Kitchen and dining",
+      "tags": [
+        "refrigerator"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/fridge_small.glb",
+      "width": 0.6,
+      "depth": 0.6,
+      "height": 0.85,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/tumble_dryer",
+      "name": "Tumble dryer",
+      "category": "Kitchen and dining",
+      "tags": [
+        "laundry",
+        "utility"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/tumble_dryer.glb",
+      "width": 0.6,
+      "depth": 0.6,
+      "height": 0.85,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/washer_dryer_stacked",
+      "name": "Washer and dryer, stacked",
+      "category": "Kitchen and dining",
+      "tags": [
+        "laundry",
+        "utility",
+        "washing machine"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/washer_dryer_stacked.glb",
+      "width": 0.6,
+      "depth": 0.6,
+      "height": 1.7,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/breakfast_bar",
+      "name": "Breakfast bar",
+      "category": "Kitchen and dining",
+      "tags": [
+        "island",
+        "counter"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/breakfast_bar.glb",
+      "width": 1.2,
+      "depth": 0.5,
+      "height": 0.95,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/bar_stool",
+      "name": "Bar stool",
+      "category": "Kitchen and dining",
+      "tags": [
+        "seat",
+        "chair"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bar_stool.glb",
+      "width": 0.458,
+      "depth": 0.396,
+      "height": 0.75,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/dining_table_long",
+      "name": "Dining table, six seats",
+      "category": "Kitchen and dining",
+      "tags": [
+        "table"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/dining_table_long.glb",
+      "width": 1.8,
+      "depth": 0.9,
+      "height": 0.75,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/trestle_table",
+      "name": "Trestle table",
+      "category": "Kitchen and dining",
+      "tags": [
+        "table",
+        "dining"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/trestle_table.glb",
+      "width": 1.8,
+      "depth": 0.9,
+      "height": 0.75,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/chair_cushion",
+      "name": "Dining chair, cushioned",
+      "category": "Kitchen and dining",
+      "tags": [
+        "seat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/chair_cushion.glb",
+      "width": 0.44,
+      "depth": 0.44,
+      "height": 0.92,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/chair_modern",
+      "name": "Dining chair, modern",
+      "category": "Kitchen and dining",
+      "tags": [
+        "seat"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/chair_modern.glb",
+      "width": 0.44,
+      "depth": 0.44,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/bench",
+      "name": "Bench",
+      "category": "Kitchen and dining",
+      "tags": [
+        "seat",
+        "dining",
+        "hall"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bench.glb",
+      "width": 1.1,
+      "depth": 0.42,
+      "height": 0.9,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/bunk_bed",
+      "name": "Bunk bed",
+      "category": "Bedroom",
+      "tags": [
+        "bed",
+        "children"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bunk_bed.glb",
+      "width": 1.0,
+      "depth": 2.06,
+      "height": 1.65,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/bedside_cabinet",
+      "name": "Bedside cabinet",
+      "category": "Bedroom",
+      "tags": [
+        "bedside table",
+        "nightstand"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bedside_cabinet.glb",
+      "width": 0.532,
+      "depth": 0.435,
+      "height": 0.526,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/desk_corner",
+      "name": "Desk, corner",
+      "category": "Office",
+      "tags": [
+        "table",
+        "work"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/desk_corner.glb",
+      "width": 1.949,
+      "depth": 1.949,
+      "height": 0.769,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/desk_chair",
+      "name": "Desk chair, high back",
+      "category": "Office",
+      "tags": [
+        "office chair",
+        "swivel"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/desk_chair.glb",
+      "width": 0.634,
+      "depth": 0.595,
+      "height": 1.15,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/bath_taps",
+      "name": "Bath, with taps",
+      "category": "Bathroom",
+      "tags": [
+        "bathtub",
+        "tub"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bath_taps.glb",
+      "width": 1.7,
+      "depth": 0.75,
+      "height": 0.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/vanity_unit",
+      "name": "Vanity unit",
+      "category": "Bathroom",
+      "tags": [
+        "basin",
+        "sink",
+        "cabinet"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/vanity_unit.glb",
+      "width": 0.6,
+      "depth": 0.46,
+      "height": 0.85,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/shower_quadrant",
+      "name": "Shower, quadrant",
+      "category": "Bathroom",
+      "tags": [
+        "cubicle",
+        "enclosure"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/shower_quadrant.glb",
+      "width": 0.9,
+      "depth": 0.9,
+      "height": 2.0,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/toilet_square",
+      "name": "Toilet, square",
+      "category": "Bathroom",
+      "tags": [
+        "wc",
+        "loo"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/toilet_square.glb",
+      "width": 0.4,
+      "depth": 0.66,
+      "height": 0.8,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true
+    },
+    {
+      "id": "kenney/stairs_open",
+      "name": "Stairs, open",
+      "category": "Fittings",
+      "tags": [
+        "staircase",
+        "steps"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/stairs_open.glb",
+      "width": 0.9,
+      "depth": 3.3,
+      "height": 2.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/stairs_turn",
+      "name": "Stairs, with a turn",
+      "category": "Fittings",
+      "tags": [
+        "staircase",
+        "steps",
+        "corner"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/stairs_turn.glb",
+      "width": 2.4,
+      "depth": 1.95,
+      "height": 2.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/coat_stand",
+      "name": "Coat stand",
+      "category": "Fittings",
+      "tags": [
+        "hall",
+        "rack"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/coat_stand.glb",
+      "width": 0.62,
+      "depth": 0.62,
+      "height": 1.75,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/doormat",
+      "name": "Doormat",
+      "category": "Fittings",
+      "tags": [
+        "mat",
+        "hall"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/doormat.glb",
+      "width": 0.7,
+      "depth": 0.42,
+      "height": 0.014,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/bin",
+      "name": "Bin",
+      "category": "Fittings",
+      "tags": [
+        "rubbish",
+        "waste",
+        "trash"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bin.glb",
+      "width": 0.291,
+      "depth": 0.328,
+      "height": 0.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "kenney/box",
+      "name": "Cardboard box",
+      "category": "Fittings",
+      "tags": [
+        "storage",
+        "moving"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/box.glb",
+      "width": 0.34,
+      "depth": 0.34,
+      "height": 0.45,
+      "centre": [
+        0.0,
+        0.0
       ],
       "against_wall": false
     }
