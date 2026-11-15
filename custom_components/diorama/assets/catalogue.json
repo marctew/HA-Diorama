@@ -108,7 +108,8 @@
         0.005
       ],
       "against_wall": true,
-      "kind": "media"
+      "kind": "media",
+      "surface": true
     },
     {
       "id": "basics/bookcase",
@@ -205,7 +206,8 @@
         0.0
       ],
       "against_wall": false,
-      "kind": "light"
+      "kind": "light",
+      "tabletop": true
     },
     {
       "id": "basics/ceiling_light",
@@ -244,7 +246,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "basics/dining_table_small",
@@ -263,7 +266,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "basics/chair",
@@ -301,7 +305,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "basics/kitchen_sink",
@@ -378,7 +383,8 @@
         0.0,
         0.095
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "basics/bed_double",
@@ -445,7 +451,8 @@
         0.0,
         0.012
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "basics/wardrobe",
@@ -482,7 +489,8 @@
         0.0,
         0.012
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "basics/desk",
@@ -501,7 +509,9 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true,
+      "surface_height": 0.74
     },
     {
       "id": "basics/office_chair",
@@ -632,7 +642,8 @@
         0.0,
         0.01
       ],
-      "against_wall": false
+      "against_wall": false,
+      "stairs": true
     },
     {
       "id": "kenney/sofa_lounge",
@@ -710,7 +721,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/lounge_chair",
@@ -824,7 +836,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/coffee_table_square",
@@ -842,7 +855,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/console_table",
@@ -861,7 +875,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/sideboard",
@@ -880,7 +895,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/tv_cabinet",
@@ -900,7 +916,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/bookcase_wide",
@@ -938,7 +955,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/cupboard",
@@ -1054,7 +1072,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "tabletop": true
     },
     {
       "id": "kenney/floor_lamp_round",
@@ -1155,7 +1174,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/base_unit_drawers",
@@ -1175,7 +1195,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/base_unit_corner",
@@ -1195,7 +1216,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/sink_unit",
@@ -1291,7 +1313,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/tumble_dryer",
@@ -1310,7 +1333,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/washer_dryer_stacked",
@@ -1349,7 +1373,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/bar_stool",
@@ -1386,7 +1411,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/trestle_table",
@@ -1405,7 +1431,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "surface": true
     },
     {
       "id": "kenney/chair_cushion",
@@ -1499,7 +1526,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/desk_corner",
@@ -1518,7 +1546,8 @@
         0.0,
         0.0
       ],
-      "against_wall": true
+      "against_wall": true,
+      "surface": true
     },
     {
       "id": "kenney/desk_chair",
@@ -1617,6 +1646,436 @@
       "against_wall": true
     },
     {
+      "id": "kenney/table_lamp_round",
+      "name": "Table lamp, round shade",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "bedside"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/table_lamp_round.glb",
+      "width": 0.218,
+      "depth": 0.251,
+      "height": 0.45,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/table_lamp_square",
+      "name": "Table lamp, square shade",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "bedside"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/table_lamp_square.glb",
+      "width": 0.186,
+      "depth": 0.186,
+      "height": 0.45,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/tv",
+      "name": "Television",
+      "category": "Living room",
+      "tags": [
+        "tv",
+        "screen",
+        "media"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/tv.glb",
+      "width": 1.2,
+      "depth": 0.225,
+      "height": 0.797,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "media",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/tv_old",
+      "name": "Television, old",
+      "category": "Living room",
+      "tags": [
+        "tv",
+        "retro",
+        "media"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/tv_old.glb",
+      "width": 0.6,
+      "depth": 0.395,
+      "height": 0.395,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "media",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/radio",
+      "name": "Radio",
+      "category": "Living room",
+      "tags": [
+        "music",
+        "media"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/radio.glb",
+      "width": 0.35,
+      "depth": 0.108,
+      "height": 0.254,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "media",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/speaker_small",
+      "name": "Speaker, small",
+      "category": "Living room",
+      "tags": [
+        "hi-fi",
+        "music",
+        "media",
+        "smart speaker"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/speaker_small.glb",
+      "width": 0.159,
+      "depth": 0.143,
+      "height": 0.32,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "media",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/books",
+      "name": "Books",
+      "category": "Living room",
+      "tags": [
+        "shelf"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/books.glb",
+      "width": 0.3,
+      "depth": 0.188,
+      "height": 0.207,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/microwave",
+      "name": "Microwave",
+      "category": "Kitchen and dining",
+      "tags": [
+        "oven"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/microwave.glb",
+      "width": 0.5,
+      "depth": 0.397,
+      "height": 0.31,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/toaster",
+      "name": "Toaster",
+      "category": "Kitchen and dining",
+      "tags": [
+        "appliance"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/toaster.glb",
+      "width": 0.3,
+      "depth": 0.16,
+      "height": 0.207,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "switch",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/coffee_machine",
+      "name": "Coffee machine",
+      "category": "Kitchen and dining",
+      "tags": [
+        "appliance",
+        "espresso"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/coffee_machine.glb",
+      "width": 0.384,
+      "depth": 0.487,
+      "height": 0.36,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "switch",
+      "tabletop": true
+    },
+    {
+      "id": "kenney/blender",
+      "name": "Blender",
+      "category": "Kitchen and dining",
+      "tags": [
+        "appliance"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/blender.glb",
+      "width": 0.239,
+      "depth": 0.192,
+      "height": 0.4,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/laptop",
+      "name": "Laptop",
+      "category": "Office",
+      "tags": [
+        "computer"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/laptop.glb",
+      "width": 0.35,
+      "depth": 0.318,
+      "height": 0.215,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/monitor",
+      "name": "Monitor",
+      "category": "Office",
+      "tags": [
+        "computer",
+        "screen"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/monitor.glb",
+      "width": 0.6,
+      "depth": 0.159,
+      "height": 0.45,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/keyboard",
+      "name": "Keyboard",
+      "category": "Office",
+      "tags": [
+        "computer"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/keyboard.glb",
+      "width": 0.45,
+      "depth": 0.188,
+      "height": 0.044,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "tabletop": true
+    },
+    {
+      "id": "kenney/wall_unit",
+      "name": "Wall unit",
+      "category": "Kitchen and dining",
+      "tags": [
+        "cupboard",
+        "cabinet",
+        "upper"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/wall_unit.glb",
+      "width": 0.6,
+      "depth": 0.35,
+      "height": 0.7,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "mount_height": 1.45
+    },
+    {
+      "id": "kenney/wall_unit_double",
+      "name": "Wall unit, two doors",
+      "category": "Kitchen and dining",
+      "tags": [
+        "cupboard",
+        "cabinet",
+        "upper"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/wall_unit_double.glb",
+      "width": 0.8,
+      "depth": 0.35,
+      "height": 0.7,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "mount_height": 1.45
+    },
+    {
+      "id": "kenney/cooker_hood",
+      "name": "Cooker hood",
+      "category": "Kitchen and dining",
+      "tags": [
+        "extractor",
+        "fan"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/cooker_hood.glb",
+      "width": 0.6,
+      "depth": 0.45,
+      "height": 0.6,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "kind": "switch",
+      "mount_height": 1.6
+    },
+    {
+      "id": "kenney/mirror",
+      "name": "Mirror",
+      "category": "Bathroom",
+      "tags": [
+        "wall"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/mirror.glb",
+      "width": 0.6,
+      "depth": 0.288,
+      "height": 0.865,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "mount_height": 1.15
+    },
+    {
+      "id": "kenney/bathroom_cabinet",
+      "name": "Bathroom cabinet",
+      "category": "Bathroom",
+      "tags": [
+        "wall",
+        "cupboard"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/bathroom_cabinet.glb",
+      "width": 0.5,
+      "depth": 0.283,
+      "height": 0.848,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "mount_height": 1.3
+    },
+    {
+      "id": "kenney/coat_rack",
+      "name": "Coat rack",
+      "category": "Fittings",
+      "tags": [
+        "hall",
+        "hooks",
+        "wall"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/coat_rack.glb",
+      "width": 0.9,
+      "depth": 0.27,
+      "height": 0.562,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "mount_height": 1.55
+    },
+    {
+      "id": "kenney/wall_light",
+      "name": "Wall light",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "sconce"
+      ],
+      "source": "kenney",
+      "file": "models/kenney/wall_light.glb",
+      "width": 0.3,
+      "depth": 0.199,
+      "height": 0.123,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": true,
+      "kind": "light",
+      "mount_height": 1.7
+    },
+    {
       "id": "kenney/stairs_open",
       "name": "Stairs, open",
       "category": "Fittings",
@@ -1633,7 +2092,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "stairs": true
     },
     {
       "id": "kenney/stairs_turn",
@@ -1653,7 +2113,8 @@
         0.0,
         0.0
       ],
-      "against_wall": false
+      "against_wall": false,
+      "stairs": true
     },
     {
       "id": "kenney/coat_stand",

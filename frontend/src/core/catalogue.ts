@@ -27,6 +27,15 @@ export interface CatalogueModel {
   hanging?: boolean;
   /** The kind of fixture this is when a device is bound to it. */
   kind?: FixtureKind;
+  /** Small things can be stood on it, at `surface_height` or else its top. */
+  surface?: boolean;
+  surface_height?: number;
+  /** Small enough to be stood on a surface. */
+  tabletop?: boolean;
+  /** A staircase: makes a hole in the floor above it. */
+  stairs?: boolean;
+  /** Goes on a wall: how far off the floor it is put to begin with. */
+  mount_height?: number;
 }
 
 export interface CatalogueSource {

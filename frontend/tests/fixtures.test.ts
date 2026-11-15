@@ -35,7 +35,7 @@ import {
 import { deleteItems, moveItems, placeItem, roomAt } from "../src/core/items";
 import { addWall } from "../src/core/plan";
 import type { Floor } from "../src/core/scene";
-import { counter, emptyFloor, p, rectangle } from "./helpers";
+import { counter, emptyFloor, p, rectangle, DOOR_DEFAULTS } from "./helpers";
 
 const catalogue: Catalogue = {
   ...JSON.parse(
@@ -435,9 +435,9 @@ describe("the entity of a door or window", () => {
     floor = {
       ...floor,
       openings: [
-        { id: "o1", wall: top.id, type: "door", offset: 1, width: 0.8, height: 2, sill: 0, entity_id: "binary_sensor.front_door" },
-        { id: "o2", wall: top.id, type: "window", offset: 3, width: 1.2, height: 1.2, sill: 0.9, entity_id: "cover.blind" },
-        { id: "o3", wall: top.id, type: "window", offset: 5, width: 0.8, height: 1, sill: 1, entity_id: null },
+        { id: "o1", wall: top.id, type: "door", offset: 1, width: 0.8, height: 2, sill: 0, entity_id: "binary_sensor.front_door" , ...DOOR_DEFAULTS},
+        { id: "o2", wall: top.id, type: "window", offset: 3, width: 1.2, height: 1.2, sill: 0.9, entity_id: "cover.blind" , ...DOOR_DEFAULTS},
+        { id: "o3", wall: top.id, type: "window", offset: 5, width: 0.8, height: 1, sill: 1, entity_id: null , ...DOOR_DEFAULTS},
       ],
     };
     return floor;

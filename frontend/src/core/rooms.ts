@@ -180,6 +180,7 @@ export function detectRooms(
       boundary: face.boundary,
       floor_style: DEFAULT_FLOOR_STYLE,
       wall_colour: DEFAULT_WALL_COLOUR,
+      open: false,
     });
   });
   return rooms;

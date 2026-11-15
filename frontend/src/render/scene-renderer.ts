@@ -27,6 +27,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { FixtureVisual } from "../core/bindings";
 import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
 import { LOW_WALL, wallsToLower, type WallMode } from "../core/cutaway";
+import { itemScale } from "../core/items";
 import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
 import { QUALITY } from "../core/quality";
 import { DAYLIGHT, type SunLighting } from "../core/sun";
@@ -40,6 +41,10 @@ export interface SceneFloor {
   floor: Floor;
   /** Height of this floor's ground above the house's, in metres. */
   elevation: number;
+  /** Where its floor is left out, for stairs coming up from below. */
+  holes?: readonly (readonly { x: number; y: number }[])[];
+  /** Staircases of the floor below, drawn coming up through the holes. */
+  below?: { items: readonly Item[]; drop: number };
 }
 
 export interface SceneContent {
@@ -229,8 +234,10 @@ export class SceneRenderer {
     const wallMeshes = new Map<string, Mesh>();
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
-    for (const { floor, elevation } of content.floors) {
+    for (const { floor, elevation, holes, below } of content.floors) {
+      if (below) this.addItems(below.items, elevation - below.drop, content.catalogue);
       const mesh = buildFloorMesh(floor, {
+        holes,
         floorColours: FLOOR_COLOURS,
         outsideColour: OUTSIDE_COLOUR,
         wallTopColour: WALL_TOP_COLOUR,
@@ -263,6 +270,9 @@ export class SceneRenderer {
           rotation: 0,
           scale: 1,
           room: fixture.room,
+          stretch: [1, 1, 1],
+          on: null,
+          cut_above: true,
         }));
       this.addItems([...floor.items, ...fixtureModels], elevation, content.catalogue);
       if (mesh.bounds) {
@@ -471,7 +481,7 @@ export class SceneRenderer {
       position.set(item.x, elevation + item.z, item.y);
       // The plan turns clockwise seen from above; three.js turns the other way.
       turn.setFromEuler(new Euler(0, (-item.rotation * Math.PI) / 180, 0));
-      scale.setScalar(item.scale);
+      scale.set(...itemScale(item));
       mesh.setMatrixAt(index, matrix.compose(position, turn, scale));
     });
     mesh.instanceMatrix.needsUpdate = true;

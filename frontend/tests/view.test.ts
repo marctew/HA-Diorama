@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { NO_SELECTION, isEmpty, prune, selectionCount, toggle } from "../src/editor/selection";
 import { fit, gridStep, scaleBarLength, toScreen, toWorld, zoomAt } from "../src/editor/view";
-import { counter, emptyFloor, rectangle } from "./helpers";
+import { counter, emptyFloor, rectangle, ITEM_DEFAULTS } from "./helpers";
 
 describe("view", () => {
   const view = { scale: 50, x: 100, y: 40 };
@@ -85,7 +85,7 @@ describe("selection", () => {
 
   it("drops what the floor no longer has", () => {
     const floor = rectangle(emptyFloor(), counter(), 0, 0, 4, 3);
-    const withSofa = { ...floor, items: [{ id: "i1", model: "basics/sofa_2", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: null }] };
+    const withSofa = { ...floor, items: [{ id: "i1", model: "basics/sofa_2", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: null , ...ITEM_DEFAULTS}] };
     const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], fixtures: [], openings: [], room: floor.rooms[0].id };
     expect(prune(kept, withSofa)).toBe(kept);
     expect(

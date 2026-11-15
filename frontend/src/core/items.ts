@@ -36,20 +36,98 @@ export function normaliseRotation(degrees: number): number {
   return wrapped === -180 ? 180 : Number(wrapped.toFixed(3));
 }
 
+/** How much bigger than its model an item is each way: across, up, and
+ * front to back (the model's own axes). */
+export function itemScale(item: Pick<Item, "scale" | "stretch">): [number, number, number] {
+  const [across, depth, up] = item.stretch ?? [1, 1, 1];
+  return [item.scale * across, item.scale * up, item.scale * depth];
+}
+
+/** The size of an item, in metres. */
+export function itemSize(
+  item: Pick<Item, "scale" | "stretch">,
+  model: CatalogueModel | undefined,
+): { width: number; depth: number; height: number } {
+  const [sx, sy, sz] = itemScale(item);
+  return {
+    width: (model?.width ?? UNKNOWN_SIZE) * sx,
+    depth: (model?.depth ?? UNKNOWN_SIZE) * sz,
+    height: (model?.height ?? UNKNOWN_SIZE) * sy,
+  };
+}
+
 /** The four corners of the floor space an item takes up: back left, back
  * right, front right, front left. */
 export function itemFootprint(item: Item, model: CatalogueModel | undefined): Point[] {
-  const width = (model?.width ?? UNKNOWN_SIZE) * item.scale;
-  const depth = (model?.depth ?? UNKNOWN_SIZE) * item.scale;
+  const [sx, , sz] = itemScale(item);
+  const w = (model?.width ?? UNKNOWN_SIZE) / 2;
+  const d = (model?.depth ?? UNKNOWN_SIZE) / 2;
   const [cx, cz] = model?.centre ?? [0, 0];
   const corner = (across: number, front: number): Point => {
-    const offset = turn((cx + across) * item.scale, (cz + front) * item.scale, item.rotation);
+    const offset = turn((cx + across) * sx, (cz + front) * sz, item.rotation);
     return { x: item.x + offset.x, y: item.y + offset.y };
   };
-  // Scale was applied to width and depth above; undo it inside corner().
-  const w = width / item.scale / 2;
-  const d = depth / item.scale / 2;
   return [corner(-w, -d), corner(w, -d), corner(w, d), corner(-w, d)];
+}
+
+/** The least and most a piece can be stretched to, in metres. */
+export const MIN_SIZE = 0.05;
+export const MAX_SIZE = 30;
+
+/** Make an item a given size one way, in metres, keeping its middle where it
+ * is. Returns what to change, or nothing if the size will not do. */
+export function resizeItem(
+  item: Item,
+  model: CatalogueModel | undefined,
+  axis: "width" | "depth" | "height",
+  metres: number,
+): Partial<Item> {
+  const natural = (model?.[axis] ?? UNKNOWN_SIZE) * item.scale;
+  if (!(metres >= MIN_SIZE) || metres > MAX_SIZE || !(natural > 0)) return {};
+  const stretch: [number, number, number] = [...(item.stretch ?? [1, 1, 1])];
+  stretch[axis === "width" ? 0 : axis === "depth" ? 1 : 2] = Number((metres / natural).toFixed(6));
+  return { stretch };
+}
+
+/** Drag one side of an item to a point: that side follows, the opposite one
+ * stays where it is. `side` is 1 for its right or front, -1 for its left or
+ * back. `step` rounds the new size, in metres. */
+export function stretchItemTo(
+  item: Item,
+  model: CatalogueModel | undefined,
+  axis: "width" | "depth",
+  side: 1 | -1,
+  point: Point,
+  step = 0,
+): Partial<Item> {
+  const [sx, , sz] = itemScale(item);
+  const natural = (model?.[axis] ?? UNKNOWN_SIZE) * item.scale;
+  const [cx, cz] = model?.centre ?? [0, 0];
+  const along = axis === "width" ? turn(1, 0, item.rotation) : turn(0, 1, item.rotation);
+  const middle = turn(cx * sx, cz * sz, item.rotation);
+  const half = ((model?.[axis] ?? UNKNOWN_SIZE) * (axis === "width" ? sx : sz)) / 2;
+  // The side that stays put.
+  const fixed = {
+    x: item.x + middle.x - side * along.x * half,
+    y: item.y + middle.y - side * along.y * half,
+  };
+  let size = side * ((point.x - fixed.x) * along.x + (point.y - fixed.y) * along.y);
+  if (step > 0) size = Math.round(size / step) * step;
+  size = Math.min(MAX_SIZE, Math.max(MIN_SIZE, size));
+  const factor = size / natural;
+  const stretch: [number, number, number] = [...(item.stretch ?? [1, 1, 1])];
+  stretch[axis === "width" ? 0 : 1] = Number(factor.toFixed(6));
+  // The model's own middle moves as it is stretched, if it is off-centre.
+  const stretched = turn(
+    cx * item.scale * stretch[0],
+    cz * item.scale * stretch[1],
+    item.rotation,
+  );
+  return {
+    stretch,
+    x: round(fixed.x + (side * along.x * size) / 2 - stretched.x),
+    y: round(fixed.y + (side * along.y * size) / 2 - stretched.y),
+  };
 }
 
 /** The id of the room a point is in, or null. A room inside a room wins. */
@@ -70,6 +148,8 @@ export function placeItem(
   point: Point,
   rotation = 0,
   makeId: MakeId = newId,
+  /** How far off the floor: for things that go on a wall. */
+  z = 0,
 ): { floor: Floor; id: string } {
   const id = makeId("i");
   const item: Item = {
@@ -77,34 +157,63 @@ export function placeItem(
     model,
     x: round(point.x),
     y: round(point.y),
-    z: 0,
+    z: round(z),
     rotation: normaliseRotation(rotation),
     scale: 1,
     room: roomAt(floor, point),
+    stretch: [1, 1, 1],
+    on: null,
+    cut_above: true,
   };
   return { floor: { ...floor, items: [...floor.items, item] }, id };
 }
 
-/** Change items. Their room follows where they end up. */
+/** Change items. Their room follows where they end up, and whatever stands
+ * on one that moves or turns goes with it. */
 export function updateItems(
   floor: Floor,
   ids: ReadonlySet<string>,
   change: (item: Item) => Partial<Item>,
 ): Floor {
   let changed = false;
-  const items = floor.items.map((item) => {
+  const before = new Map<string, Item>();
+  const after = new Map<string, Item>();
+  let items = floor.items.map((item) => {
     if (!ids.has(item.id)) return item;
     const next = { ...item, ...change(item) };
     next.x = round(next.x);
     next.y = round(next.y);
     next.rotation = normaliseRotation(next.rotation);
     next.room = roomAt(floor, next);
-    const same = (Object.keys(next) as (keyof Item)[]).every((key) => next[key] === item[key]);
+    const same = (Object.keys(next) as (keyof Item)[]).every((key) => sameValue(next[key], item[key]));
     if (same) return item;
     changed = true;
+    before.set(item.id, item);
+    after.set(item.id, next);
     return next;
   });
-  return changed ? syncFixtures({ ...floor, items }) : floor;
+  if (!changed) return floor;
+  items = items.map((item) => {
+    const was = item.on !== null && !ids.has(item.id) ? before.get(item.on) : undefined;
+    const now = was && after.get(was.id);
+    if (!was || !now) return item;
+    const offset = turn(item.x - was.x, item.y - was.y, now.rotation - was.rotation);
+    const position = { x: round(now.x + offset.x), y: round(now.y + offset.y) };
+    return {
+      ...item,
+      ...position,
+      rotation: normaliseRotation(item.rotation + now.rotation - was.rotation),
+      room: roomAt(floor, position),
+    };
+  });
+  return syncFixtures({ ...floor, items });
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => value === b[index]);
+  }
+  return a === b;
 }
 
 export function moveItems(floor: Floor, positions: ReadonlyMap<string, Point>): Floor {
@@ -123,24 +232,40 @@ export function duplicateItems(
   makeId: MakeId = newId,
 ): { floor: Floor; ids: string[] } {
   const copies: Item[] = [];
+  const copyOf = new Map<string, string>();
   for (const item of floor.items) {
     if (!ids.has(item.id)) continue;
     const position = { x: round(item.x + offset), y: round(item.y + offset) };
-    copies.push({ ...item, ...position, id: makeId("i"), room: roomAt(floor, position) });
+    const id = makeId("i");
+    copyOf.set(item.id, id);
+    copies.push({
+      ...item,
+      ...position,
+      stretch: [...item.stretch],
+      id,
+      room: roomAt(floor, position),
+    });
   }
   if (copies.length === 0) return { floor, ids: [] };
+  // A copy of something on a table stands on the table's copy, if there is one.
+  for (const copy of copies) {
+    if (copy.on !== null && copyOf.has(copy.on)) copy.on = copyOf.get(copy.on)!;
+  }
   return {
     floor: { ...floor, items: [...floor.items, ...copies] },
     ids: copies.map((copy) => copy.id),
   };
 }
 
-/** Remove items. A fixture that used one as its model is left without. */
+/** Remove items. A fixture that used one as its model is left without, and
+ * whatever stood on one drops to the floor. */
 export function deleteItems(floor: Floor, ids: ReadonlySet<string>): Floor {
   if (!floor.items.some((item) => ids.has(item.id))) return floor;
   return {
     ...floor,
-    items: floor.items.filter((item) => !ids.has(item.id)),
+    items: floor.items
+      .filter((item) => !ids.has(item.id))
+      .map((item) => (item.on !== null && ids.has(item.on) ? { ...item, on: null, z: 0 } : item)),
     fixtures: floor.fixtures.map((fixture) =>
       fixture.item !== null && ids.has(fixture.item) ? { ...fixture, item: null } : fixture,
     ),

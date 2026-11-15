@@ -24,7 +24,7 @@ import {
 import { polygonArea, polygonCentroid } from "../src/core/geometry";
 import { addWall, deleteWalls } from "../src/core/plan";
 import type { Floor, Item } from "../src/core/scene";
-import { counter, emptyFloor, p, rectangle, wallBetween } from "./helpers";
+import { counter, emptyFloor, p, rectangle, wallBetween, ITEM_DEFAULTS } from "./helpers";
 
 // The real catalogue, as the integration serves it.
 const catalogue: Catalogue = {
@@ -45,6 +45,7 @@ const item = (change: Partial<Item> = {}): Item => ({
   rotation: 0,
   scale: 1,
   room: null,
+  ...ITEM_DEFAULTS,
   ...change,
 });
 
@@ -152,7 +153,7 @@ describe("placing and changing items", () => {
     const placed = placeItem(floor, sofa.id, { x: 1.23456789, y: 2 }, 450, counter());
     expect(placed.id).toBe("i1");
     expect(placed.floor.items).toEqual([
-      { id: "i1", model: sofa.id, x: 1.2346, y: 2, z: 0, rotation: 90, scale: 1, room: leftRoom(floor) },
+      { id: "i1", model: sofa.id, x: 1.2346, y: 2, z: 0, rotation: 90, scale: 1, room: leftRoom(floor) , ...ITEM_DEFAULTS},
     ]);
     expect(floor.items).toEqual([]);
   });

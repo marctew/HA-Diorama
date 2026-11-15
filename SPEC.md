@@ -143,7 +143,9 @@ Units are metres and degrees. Plan coordinates are `x` (east) and `y` (south) on
 
 - Walls are a graph: vertices and segments between them. Shared walls are one segment, so dragging a vertex moves every wall attached to it.
 - Rooms are the closed faces of that graph. After each edit the editor re-detects faces and matches them to the existing rooms (same vertex set first, then centroid containment) so a room keeps its id, name and area through edits. Unmatched old rooms are dropped; new faces become unnamed rooms.
-- Openings sit on a wall by offset from vertex `a`. Doors and windows may bind a `binary_sensor` or `cover`.
+- Openings sit on a wall by offset from vertex `a`. Doors and windows may bind a `binary_sensor` or `cover`. A door has `leaves` (1 or 2), `hinge` (`start` or `end`: which end of the opening a single leaf hangs from) and `swing` (1 or -1: the side it opens to). An `archway` is a door-sized hole with no door.
+- An item has `scale` and, on top of it, `stretch`: three factors, across, front to back and up. `on` is the id of the piece it stands on, or null; `z` is how far off the floor it is. `cut_above` (stairs only) says whether it opens the floor above.
+- A room with `open` set has no floor.
 - An item is furniture. A fixture is something bound to an entity. A fixture can have its own model, or point at an item (`item`) so an existing lamp model becomes the light.
 - `trace` is an optional floor-plan image to draw over. The image is stored with uploaded models.
 - Stairs are an item with a model in v1 (purely visual). No stairwell cut-outs until later.
@@ -271,14 +273,13 @@ Built (stage 5)
 - `tools/build_catalogue.py` writes `custom_components/diorama/assets/`: one `.glb` per model under `models/<source>/`, and `catalogue.json` listing each model's id, name, category, search tags, source, file, the box it fills in metres (width, depth, height and where the middle of that box is from the model's origin), whether it stands against a wall or hangs from the ceiling, and the kind of fixture it naturally is (lamps, the TV, the radiator). The output is committed, and a test fails if it is not what the tool builds.
 - The first set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
 - Model format: one mesh, `POSITION`, `NORMAL` and `COLOR_0`, no textures; metres, +Y up, standing on y = 0, front facing +Z. The loader in the frontend accepts any `.glb` and reduces it to that (meshes merged, material colours baked into vertex colours, textures ignored), so other kits and uploads go through the same path.
-- With it come 57 pieces of Kenney's Furniture Kit 2.0 (CC0), 90 models and about 2 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
+- With it come 78 pieces of Kenney's Furniture Kit 2.0 (CC0), 111 models and about 2.3 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
 - Pictures for the drawer are drawn in the browser from the models themselves, so there are no thumbnail files to keep in step.
 - Only CC0 models are bundled; a test checks every model's source says so. Sources and licences are listed in `CREDITS.md`.
 
 Not done
 
 - Quaternius's furniture (CC0) has not been looked at.
-- Furniture cannot be put on a table or a wall: a piece has a height in the model but nothing sets it. That is why the kit's lamps for tables, its kitchen wall units, its appliances for the worktop and its screens are not taken.
 
 My models (stage 10)
 
@@ -315,8 +316,9 @@ Each stage ends with something that runs and with its tests.
 8. Doors and windows, multiple floors, trace image, camera presets.
 9. More bindings in the order of the table in section 8; day and night.
 10. Release: README with screenshots, CREDITS, model upload, translations structure, Marketplace submission.
+11. After the first release (0.2.0): stacking, stretching, double doors and archways, stairwells.
 
-All ten stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
+All eleven stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
 
 ## 13. Decisions already made
 
@@ -367,6 +369,20 @@ Learned while building stage 9:
 - `sun.sun` has `elevation` and `azimuth` attributes (degrees, azimuth clockwise from north), and is there on a default installation.
 - A template cover goes straight from `closed` to `open`; a real one reports `opening` for a while. The optimistic state covers both: it waits for the state it expects and gives up after three seconds.
 - Home Assistant's own frontend logs an unhandled `unknown_command` rejection on every page of the bare test instance. It is not Diorama's.
+
+Stage 11, as built (0.2.0)
+
+- Stacking (`core/stacking.ts`). The catalogue marks models as a `surface` (with a `surface_height` where the top is not the place, as on a desk with a monitor) or as `tabletop`, and gives things for a wall a `mount_height`. A tabletop piece placed or dropped over a surface gets `on` set to it and `z` set to its top (`restack`); dropped elsewhere it goes back to the floor. Only one level: nothing stands on something that is itself standing on something. `updateItems` carries what stands on a piece along when it moves or turns, `deleteItems` drops it to the floor, and the editor runs `settleStacks` on every edit so that a taller table lifts its lamp. A model someone added counts as tabletop if it is small; nothing they add is a surface, but any piece can be given a height by hand ("Off the floor"), which also takes it off what it was on.
+- Stretching (`core/items.ts`). `itemScale` is `scale` times `stretch` per axis and is what the plan outline, the 3D instance and a lamp's light height all use. A selected piece has four handles on the plan, a little outside its outline so that a small piece can still be picked up by its middle; dragging one moves that side and leaves the opposite one where it is (`stretchItemTo`), in 5 cm steps unless Alt is held. The inspector takes a width, depth and height in metres. Every model can be stretched.
+- Doors (`core/openings.ts`, `render/fixture-layer.ts`). `doorLeaves` says where each leaf hangs. Every door is drawn with its leaves, standing open unless it has a sensor that says shut; a door with a cover (a garage door) has a blind instead. The plan draws each leaf and its swing to match. A selected door or window has a handle at each end (`resizeOpening`).
+- Stairwells (`core/stairwells.ts`). The catalogue marks staircases (`stairs`). The floor above one is drawn with its outline left out: `buildFloorMesh` takes `holes` and cuts each floor triangle against them (`subtractConvex` in `geometry.ts`, exact and with no dependence on the shape of the rooms). In the house view each floor is cut for the stairs of the floor under it. A floor or room shown alone also needs that floor loaded (`floorsNeeded`), is cut the same way, and draws its staircases coming up from below (`ViewFloor.below`). The editor fetches the floor below for the same purpose and outlines the hole on the plan. A room marked `open` has no floor at all, for stairwells of other shapes.
+- The hole is the whole outline of the staircase, not just the part that needs headroom.
+
+Learned while building stage 11:
+
+- A handle drawn on the middle of each side of a small piece covers the piece: the first try at dragging a lamp off a table stretched the lamp instead. Found in the browser, not by a unit test.
+- With a table selected, a click on the lamp standing on it used to pick the table again, because what is selected is preferred. What stands on a piece is now preferred over the piece.
+- `Omit` on a union of object types keeps only the keys they share; the handle drags are their own union with the pointer added on.
 
 Learned while building stage 10:
 

@@ -7,7 +7,7 @@ import { kindForEntity } from "./bindings";
 import { findModel, type Catalogue } from "./catalogue";
 import { pointInPolygon, type Point } from "./geometry";
 import { newId, type MakeId } from "./ids";
-import { itemFootprint, roomAt } from "./items";
+import { itemFootprint, itemScale, roomAt } from "./items";
 import type { Fixture, FixtureKind, Floor, Item } from "./scene";
 
 /** The model a fixture gets when it is not put on a piece of furniture. */
@@ -131,7 +131,7 @@ export function fixtureHeight(
   const modelId = item?.model ?? fixture.model;
   const model = modelId ? findModel(catalogue, modelId) : undefined;
   if (!model) return fixture.z > 0 ? fixture.z : MARKER_HEIGHT;
-  const scale = item?.scale ?? 1;
+  const scale = item ? itemScale(item)[1] : 1;
   const base = item?.z ?? fixture.z;
   // A pendant's shade hangs a little below the ceiling; a lamp's is at its top.
   return base + (model.hanging ? model.height - 0.5 : model.height * 0.88) * scale;

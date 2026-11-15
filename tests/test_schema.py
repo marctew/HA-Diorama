@@ -252,3 +252,79 @@ def test_cameras_need_unique_ids_and_have_a_limit() -> None:
         validate_house({"cameras": [CAMERA, CAMERA]})
     with pytest.raises(vol.Invalid):
         validate_house({"cameras": [{**CAMERA, "id": f"c{n}"} for n in range(31)]})
+
+
+def test_new_fields_get_their_defaults() -> None:
+    """A floor saved before stretching, stacking and double doors still loads."""
+    floor = validate_floor(sample_floor())
+    assert floor["items"][0]["stretch"] == [1, 1, 1]
+    assert floor["items"][0]["on"] is None
+    assert floor["items"][0]["cut_above"] is True
+    assert floor["openings"][0]["leaves"] == 1
+    assert floor["openings"][0]["hinge"] == "start"
+    assert floor["openings"][0]["swing"] == 1
+    assert floor["rooms"][0]["open"] is False
+    # Each item gets a list of its own, not one shared between them.
+    again = validate_floor(sample_floor())
+    assert floor["items"][0]["stretch"] is not again["items"][0]["stretch"]
+
+
+def test_stretch_stacking_and_door_options_are_kept() -> None:
+    data = sample_floor()
+    data["items"].append(
+        {
+            "id": "i2",
+            "model": "basics/table_lamp",
+            "x": 2.1,
+            "y": 2.5,
+            "z": 0.8,
+            "on": "i1",
+            "stretch": [1.5, 1, 2],
+            "cut_above": False,
+        }
+    )
+    data["openings"][0].update(leaves=2, hinge="end", swing=-1)
+    data["openings"].append(
+        {
+            "id": "o2",
+            "wall": "w2",
+            "type": "archway",
+            "offset": 1,
+            "width": 0.9,
+            "height": 2,
+        }
+    )
+    data["rooms"][0]["open"] = True
+    floor = validate_floor(data)
+    assert floor["items"][1]["on"] == "i1"
+    assert floor["items"][1]["stretch"] == [1.5, 1, 2]
+    assert floor["items"][1]["cut_above"] is False
+    assert floor["openings"][0]["leaves"] == 2
+    assert floor["openings"][0]["hinge"] == "end"
+    assert floor["openings"][0]["swing"] == -1
+    assert floor["openings"][1]["type"] == "archway"
+    assert floor["rooms"][0]["open"] is True
+
+
+@pytest.mark.parametrize(
+    ("where", "change"),
+    [
+        ("items", {"stretch": [1, 1]}),
+        ("items", {"stretch": [1, 1, 0]}),
+        ("items", {"stretch": [1, 1, 99]}),
+        ("items", {"stretch": "big"}),
+        ("items", {"on": "nope"}),
+        ("items", {"on": "i1"}),
+        ("items", {"cut_above": "yes"}),
+        ("openings", {"leaves": 3}),
+        ("openings", {"hinge": "middle"}),
+        ("openings", {"swing": 0}),
+        ("openings", {"type": "portal"}),
+        ("rooms", {"open": "yes"}),
+    ],
+)
+def test_bad_values_for_the_new_fields_are_refused(where: str, change: dict) -> None:
+    data = sample_floor()
+    data[where][0].update(change)
+    with pytest.raises(vol.Invalid):
+        validate_floor(data)

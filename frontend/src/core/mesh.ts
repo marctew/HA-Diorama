@@ -12,6 +12,7 @@ import {
   pointInPolygon,
   polygonArea,
   signedArea,
+  subtractConvex,
   triangulate,
   type Point,
 } from "./geometry";
@@ -64,6 +65,9 @@ export interface MeshOptions {
   highlightColour?: Colour;
   /** Walls are drawn no taller than this: lets you see into the rooms. */
   maxWallHeight?: number;
+  /** Outlines to leave out of the floor: where stairs come up from below.
+   * Each must be convex. */
+  holes?: readonly (readonly Point[])[];
 }
 
 /** A mitre longer than this many wall thicknesses is squared off instead. */
@@ -252,18 +256,29 @@ export function buildFloorMesh(floor: Floor, options: MeshOptions): FloorMesh {
 
   // A horizontal face at height y, seen from above. Model z is plan y, which
   // turns the plan's winding round: emit each triangle reversed.
+  const holes = (options.holes ?? []).filter((hole) => hole.length >= 3);
   const flat = (mesh: MeshData, outline: readonly Point[], y: number, colour: Colour) => {
     const indices = triangulate(outline);
     for (let i = 0; i < indices.length; i += 3) {
-      const [a, b, c] = [outline[indices[i]], outline[indices[i + 1]], outline[indices[i + 2]]];
-      push(mesh, [[a.x, y, a.y], [c.x, y, c.y], [b.x, y, b.y]], [0, 1, 0], colour);
+      // Each triangle, less whatever of it is over a hole.
+      let pieces: Point[][] = [
+        [outline[indices[i]], outline[indices[i + 1]], outline[indices[i + 2]]],
+      ];
+      for (const hole of holes) pieces = pieces.flatMap((piece) => subtractConvex(piece, hole));
+      for (const piece of pieces) {
+        for (let k = 1; k < piece.length - 1; k++) {
+          const [a, b, c] = [piece[0], piece[k], piece[k + 1]];
+          push(mesh, [[a.x, y, a.y], [c.x, y, c.y], [b.x, y, b.y]], [0, 1, 0], colour);
+        }
+      }
     }
   };
 
   const nesting = roomNesting(floor);
   for (const room of floor.rooms) {
     const polygon = roomPolygon(floor, room);
-    if (polygon.length < 3) continue;
+    // A room that is open to the one below has no floor to draw.
+    if (polygon.length < 3 || room.open) continue;
     const colour =
       options.highlightRoom === room.id && options.highlightColour
         ? options.highlightColour

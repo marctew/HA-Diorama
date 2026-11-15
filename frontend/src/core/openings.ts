@@ -13,7 +13,11 @@ export const OPENING_DEFAULTS: Readonly<
 > = {
   door: { width: 0.8, height: 2.0, sill: 0 },
   window: { width: 1.2, height: 1.2, sill: 0.9 },
+  archway: { width: 0.9, height: 2.0, sill: 0 },
 };
+
+/** The step a dragged end of an opening moves in, in metres. */
+export const OPENING_STEP = 0.05;
 
 /** The narrowest opening worth having, and the least wall to leave either side. */
 const MIN_WIDTH = 0.3;
@@ -81,6 +85,9 @@ export function openingAt(
     height: defaults.height,
     sill: defaults.sill,
     entity_id: null,
+    leaves: 1,
+    hinge: "start",
+    swing: 1,
   };
 }
 
@@ -115,7 +122,8 @@ export function updateOpening(floor: Floor, id: string, patch: Partial<Opening>)
     const next = { ...opening, ...patch, id: opening.id };
     const line = wallLine(floor, next.wall);
     if (!line) return opening;
-    if (patch.type && patch.type !== opening.type) {
+    const reachesFloor = (type: OpeningType) => type !== "window";
+    if (patch.type && reachesFloor(patch.type) !== reachesFloor(opening.type)) {
       // A door reaches the floor; a new window starts at sill height.
       next.sill = patch.sill ?? OPENING_DEFAULTS[patch.type].sill;
       next.height = patch.height ?? OPENING_DEFAULTS[patch.type].height;
@@ -125,6 +133,30 @@ export function updateOpening(floor: Floor, id: string, patch: Partial<Opening>)
     next.height = round(Math.min(Math.max(next.height, 0.1), 6));
     next.sill = round(Math.min(Math.max(next.sill, 0), 6));
     return next;
+  });
+}
+
+/** Drag one end of an opening to a point along its wall: that end follows,
+ * the other stays where it is. `step` rounds where it lands, in metres. */
+export function resizeOpening(
+  floor: Floor,
+  id: string,
+  end: "start" | "end",
+  point: Point,
+  step = OPENING_STEP,
+): Floor {
+  return change(floor, id, (opening) => {
+    const line = wallLine(floor, opening.wall);
+    if (!line) return opening;
+    let along = projectOnSegment(point, line.a, line.b).t * line.length;
+    if (step > 0) along = Math.round(along / step) * step;
+    const far = opening.offset + opening.width;
+    if (end === "end") {
+      const to = Math.min(Math.max(along, opening.offset + MIN_WIDTH), line.length);
+      return { ...opening, width: round(to - opening.offset) };
+    }
+    const from = Math.min(Math.max(along, 0), far - MIN_WIDTH);
+    return { ...opening, offset: round(from), width: round(far - from) };
   });
 }
 
@@ -173,6 +205,33 @@ export function openingEnds(
     end: at(opening.offset + opening.width),
     thickness: wall.thickness,
   };
+}
+
+/** One leaf of a door: where along the wall it is hinged, how wide it is,
+ * and whether it reaches towards the wall's far end (1) or its start (-1)
+ * when shut. */
+export interface DoorLeaf {
+  hinge: number;
+  width: number;
+  towards: 1 | -1;
+}
+
+/** The leaves of a door: one, hung from either end, or two meeting in the
+ * middle. Anything that is not a door has none. */
+export function doorLeaves(
+  opening: Pick<Opening, "type" | "offset" | "width" | "leaves" | "hinge">,
+): DoorLeaf[] {
+  if (opening.type !== "door") return [];
+  const far = opening.offset + opening.width;
+  if (opening.leaves === 2) {
+    return [
+      { hinge: opening.offset, width: opening.width / 2, towards: 1 },
+      { hinge: far, width: opening.width / 2, towards: -1 },
+    ];
+  }
+  return opening.hinge === "end"
+    ? [{ hinge: far, width: opening.width, towards: -1 }]
+    : [{ hinge: opening.offset, width: opening.width, towards: 1 }];
 }
 
 function change(floor: Floor, id: string, edit: (opening: Opening) => Opening): Floor {

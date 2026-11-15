@@ -2,7 +2,7 @@ import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { EMPTY_CATALOGUE, findModel, type Catalogue } from "../core/catalogue";
 import { distance, polygonArea, polygonPerimeter } from "../core/geometry";
-import { ROTATE_STEP, updateItems } from "../core/items";
+import { itemSize, resizeItem, ROTATE_STEP, updateItems } from "../core/items";
 import { commit, moveVertices, setWallLength, setWallThickness } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
 import {
@@ -141,6 +141,15 @@ export class DioramaInspector extends LitElement {
           />
         </div>
       </div>
+      <label class="check">
+        <input
+          type="checkbox"
+          .checked=${room.open}
+          @change=${(event: Event) =>
+            this.updateRoom(room, { open: (event.target as HTMLInputElement).checked })}
+        />
+        <span>Open to the floor below (no floor here)</span>
+      </label>
       <dl>
         <dt>Floor area</dt>
         <dd>${formatArea(polygonArea(polygon), this.units)}</dd>
@@ -278,6 +287,25 @@ export class DioramaInspector extends LitElement {
         />
       </label>
     `;
+    const dimensions = itemSize(item, model);
+    const stretched = item.scale !== 1 || item.stretch.some((factor) => factor !== 1);
+    const support = floor.items.find((candidate) => candidate.id === item.on);
+    const size = (label: string, axis: "width" | "depth" | "height") => html`
+      <label>
+        <span>${label} (${this.units === "metric" ? "m" : "ft"})</span>
+        <input
+          type="text"
+          inputmode="decimal"
+          .value=${lengthForInput(dimensions[axis], this.units)}
+          @change=${(event: Event) => {
+            const metres = parseLength(value(event).trim(), this.units);
+            const patch = metres === undefined ? {} : resizeItem(item, model, axis, metres);
+            if (patch.stretch) change(patch);
+            else (event.target as HTMLInputElement).value = lengthForInput(dimensions[axis], this.units);
+          }}
+        />
+      </label>
+    `;
     return html`
       <h2>${model?.name ?? "Unknown furniture"}</h2>
       ${model
@@ -291,19 +319,42 @@ export class DioramaInspector extends LitElement {
       </div>
       <div class="pair">
         ${number("Turned (degrees)", item.rotation, ROTATE_STEP, (rotation) => change({ rotation }), 720)}
-        ${number("Size (%)", item.scale * 100, 5, (percent) => {
-          if (percent >= 5 && percent <= 2000) change({ scale: percent / 100 });
-        }, 2000)}
+        ${number(
+          "Off the floor (m)",
+          item.z,
+          0.05,
+          // Set by hand, it no longer follows what it was standing on.
+          (z) => {
+            if (z >= 0) change({ z, on: null });
+          },
+          6,
+        )}
       </div>
+      <div class="trio">
+        ${size("Width", "width")}${size("Depth", "depth")}${size("Height", "height")}
+      </div>
+      ${stretched
+        ? html`<button class="plain" @click=${() => change({ stretch: [1, 1, 1], scale: 1 })}>
+            Back to its own size
+          </button>`
+        : html`<p class="help">Drag a handle on the plan to stretch it, or type a size.</p>`}
+      ${model?.stairs
+        ? html`<label class="check">
+            <input
+              type="checkbox"
+              .checked=${item.cut_above}
+              @change=${(event: Event) =>
+                change({ cut_above: (event.target as HTMLInputElement).checked })}
+            />
+            <span>Opens the floor above it</span>
+          </label>`
+        : nothing}
       <dl>
         <dt>Room</dt>
         <dd>${room ? room.name || "Unnamed room" : "None"}</dd>
-        ${model
-          ? html`<dt>Size</dt>
-              <dd>
-                ${formatLength(model.width * item.scale, this.units)} ×
-                ${formatLength(model.depth * item.scale, this.units)}
-              </dd>`
+        ${support
+          ? html`<dt>Stands on</dt>
+              <dd>${findModel(this.catalogue, support.model)?.name ?? "Furniture"}</dd>`
           : nothing}
       </dl>
       <div class="actions">${this.renderItemActions()} ${this.renderDelete("Delete")}</div>
@@ -332,14 +383,41 @@ export class DioramaInspector extends LitElement {
       </label>
     `;
     return html`
-      <h2>${opening.type === "door" ? "Door" : "Window"}</h2>
+      <h2>${OPENING_NAMES[opening.type]}</h2>
       <label>
         <span>Kind</span>
         <select @change=${(event: Event) => change({ type: value(event) as Opening["type"] })}>
           <option value="door" ?selected=${opening.type === "door"}>Door</option>
           <option value="window" ?selected=${opening.type === "window"}>Window</option>
+          <option value="archway" ?selected=${opening.type === "archway"}>
+            Archway (no door)
+          </option>
         </select>
       </label>
+      ${opening.type === "door"
+        ? html`<label>
+              <span>Leaves</span>
+              <select
+                @change=${(event: Event) => change({ leaves: value(event) === "2" ? 2 : 1 })}
+              >
+                <option value="1" ?selected=${opening.leaves === 1}>One</option>
+                <option value="2" ?selected=${opening.leaves === 2}>Two (double doors)</option>
+              </select>
+            </label>
+            <div class="actions tight">
+              ${opening.leaves === 1
+                ? html`<button
+                    class="plain"
+                    @click=${() => change({ hinge: opening.hinge === "start" ? "end" : "start" })}
+                  >
+                    Hinge the other side
+                  </button>`
+                : nothing}
+              <button class="plain" @click=${() => change({ swing: opening.swing === 1 ? -1 : 1 })}>
+                Open the other way
+              </button>
+            </div>`
+        : nothing}
       <div class="pair">${length("Width", "width")}${length("Height", "height")}</div>
       <div class="pair">
         ${length("From the wall's end", "offset")}
@@ -361,10 +439,12 @@ export class DioramaInspector extends LitElement {
       </label>
       <p class="help">
         A door or window sensor shows it open or shut. A blind, shutter or garage door shows how far
-        down it is, and a tap works it.
+        down it is, and a tap works it. A door with no sensor stands open.
       </p>
-      <p class="help">Drag it along the wall, or onto another wall.</p>
-      ${this.renderDelete(opening.type === "door" ? "Delete door" : "Delete window")}
+      <p class="help">
+        Drag it along the wall, or onto another wall. Drag either end to make it wider or narrower.
+      </p>
+      ${this.renderDelete(`Delete ${OPENING_NAMES[opening.type].toLowerCase()}`)}
     `;
   }
 
@@ -735,6 +815,28 @@ export class DioramaInspector extends LitElement {
         font-size: 11px;
         color: var(--diorama-text);
       }
+      .trio {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+      }
+      label.check {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: 8px;
+        margin: 10px 0;
+      }
+      label.check input {
+        width: 18px;
+        height: 18px;
+        margin: 0;
+        accent-color: var(--diorama-accent);
+      }
+      label.check span {
+        font-size: 13px;
+        color: var(--diorama-text);
+      }
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -823,6 +925,12 @@ declare global {
     "diorama-inspector": DioramaInspector;
   }
 }
+
+const OPENING_NAMES: Readonly<Record<Opening["type"], string>> = {
+  door: "Door",
+  window: "Window",
+  archway: "Archway",
+};
 
 const TAP_LABELS: Readonly<Record<TapAction, (kind: Fixture["kind"]) => string>> = {
   toggle: (kind) => (kind === "cover" ? "Open or close" : "Switch on or off"),

@@ -59,12 +59,19 @@ export interface Wall {
 export interface Opening {
   id: string;
   wall: string;
-  type: "door" | "window";
+  /** An archway is a door-sized hole with no door in it. */
+  type: "door" | "window" | "archway";
   offset: number;
   width: number;
   height: number;
   sill: number;
   entity_id: string | null;
+  /** Doors: one leaf or two. */
+  leaves: 1 | 2;
+  /** Doors: the end a single leaf hangs from, the wall's first or its far one. */
+  hinge: "start" | "end";
+  /** Doors: the side it opens to. 1 is to the left of the wall's direction. */
+  swing: 1 | -1;
 }
 
 export interface Room {
@@ -74,6 +81,8 @@ export interface Room {
   boundary: string[];
   floor_style: string;
   wall_colour: string;
+  /** No floor here: a stairwell, a gallery, a double-height room. */
+  open: boolean;
 }
 
 export interface Item {
@@ -85,6 +94,12 @@ export interface Item {
   rotation: number;
   scale: number;
   room: string | null;
+  /** Stretched on top of `scale`: across, front to back, and up. */
+  stretch: [number, number, number];
+  /** The piece of furniture this one stands on, if any. */
+  on: string | null;
+  /** For stairs: whether they make a hole in the floor above. */
+  cut_above: boolean;
 }
 
 export interface Fixture {

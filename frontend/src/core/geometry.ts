@@ -186,3 +186,53 @@ export function triangulate(points: readonly Point[]): number[] {
   if (order.length === 3) triangles.push(order[0], order[1], order[2]);
   return triangles;
 }
+
+/** The part of a convex polygon to the left of the line from `a` to `b`
+ * (or to the right, with `keepLeft` false). May come back empty. */
+export function clipConvex(
+  polygon: readonly Point[],
+  a: Point,
+  b: Point,
+  keepLeft = true,
+): Point[] {
+  const side = (point: Point) => {
+    const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+    return keepLeft ? cross : -cross;
+  };
+  const result: Point[] = [];
+  for (let i = 0; i < polygon.length; i++) {
+    const current = polygon[i];
+    const next = polygon[(i + 1) % polygon.length];
+    const here = side(current);
+    const there = side(next);
+    if (here >= 0) result.push(current);
+    if ((here > 0 && there < 0) || (here < 0 && there > 0)) {
+      const t = here / (here - there);
+      result.push({
+        x: current.x + (next.x - current.x) * t,
+        y: current.y + (next.y - current.y) * t,
+      });
+    }
+  }
+  return result;
+}
+
+/** A convex polygon with a convex hole taken out of it, as convex pieces
+ * wound the same way as the polygon. The hole may be wound either way, and
+ * may lie partly or wholly outside. */
+export function subtractConvex(polygon: readonly Point[], hole: readonly Point[]): Point[][] {
+  if (hole.length < 3 || polygon.length < 3) return [[...polygon]];
+  const leftIsInside = signedArea(hole) > 0;
+  const pieces: Point[][] = [];
+  let rest: Point[] = [...polygon];
+  for (let i = 0; i < hole.length && rest.length >= 3; i++) {
+    const a = hole[i];
+    const b = hole[(i + 1) % hole.length];
+    // What is beyond this edge is outside the hole: keep it. What is left
+    // goes on to be cut by the next edge.
+    const outside = clipConvex(rest, a, b, !leftIsInside);
+    if (outside.length >= 3 && Math.abs(signedArea(outside)) > 1e-9) pieces.push(outside);
+    rest = clipConvex(rest, a, b, leftIsInside);
+  }
+  return pieces;
+}

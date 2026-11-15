@@ -29,7 +29,9 @@ FIXTURE_KINDS = (
     "lock",
     "label",
 )
-OPENING_TYPES = ("door", "window")
+# An archway is a door-sized hole with no door in it.
+OPENING_TYPES = ("door", "window", "archway")
+HINGES = ("start", "end")
 
 DEFAULT_WALL_HEIGHT = 2.4
 DEFAULT_WALL_THICKNESS = 0.1
@@ -148,6 +150,11 @@ OPENING = vol.Schema(
         vol.Required("height"): number(0.1, 6),
         vol.Optional("sill", default=0): number(0, 6),
         vol.Optional("entity_id", default=None): vol.Any(None, ENTITY_ID),
+        # Doors: one leaf or two, which end a single leaf hangs from (the
+        # wall's first end or its far one), and the side it opens to.
+        vol.Optional("leaves", default=1): vol.In((1, 2)),
+        vol.Optional("hinge", default="start"): vol.In(HINGES),
+        vol.Optional("swing", default=1): vol.In((1, -1)),
     }
 )
 ROOM = vol.Schema(
@@ -158,6 +165,8 @@ ROOM = vol.Schema(
         vol.Required("boundary"): vol.All([ID], vol.Length(min=3, max=200)),
         vol.Optional("floor_style", default=DEFAULT_FLOOR_STYLE): STYLE,
         vol.Optional("wall_colour", default=DEFAULT_WALL_COLOUR): COLOUR,
+        # No floor here: a stairwell, a gallery, a double-height room.
+        vol.Optional("open", default=False): bool,
     }
 )
 ITEM = vol.Schema(
@@ -170,6 +179,14 @@ ITEM = vol.Schema(
         vol.Optional("rotation", default=0): number(-360, 360),
         vol.Optional("scale", default=1): number(0.05, 20),
         vol.Optional("room", default=None): vol.Any(None, ID),
+        # Stretched on top of `scale`: across, front to back, and up.
+        vol.Optional("stretch", default=lambda: [1, 1, 1]): vol.All(
+            [number(0.05, 20)], vol.Length(min=3, max=3)
+        ),
+        # The piece of furniture this one stands on, if any.
+        vol.Optional("on", default=None): vol.Any(None, ID),
+        # For stairs: whether they make a hole in the floor above.
+        vol.Optional("cut_above", default=True): bool,
     }
 )
 FIXTURE = vol.Schema(
@@ -327,6 +344,11 @@ def validate_floor(data: Any) -> dict[str, Any]:
 
     for index, item in enumerate(floor["items"]):
         _known(item["room"], rooms, "room", ["items", index, "room"])
+        _known(item["on"], items, "item", ["items", index, "on"])
+        if item["on"] == item["id"]:
+            raise vol.Invalid(
+                "a piece cannot stand on itself", path=["items", index, "on"]
+            )
 
     for index, fixture in enumerate(floor["fixtures"]):
         _known(fixture["room"], rooms, "room", ["fixtures", index, "room"])

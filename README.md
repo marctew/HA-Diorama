@@ -8,8 +8,8 @@ Your house in 3D in Home Assistant. Draw it floor by floor and room by room, fur
 
 ## What it does
 
-- **Draw**: walls with snapping and typed lengths, rooms found for you, doors and windows, several floors, and a plan image to trace over.
-- **Furnish**: 90 low-poly pieces are included, and you can add `.glb` models of your own.
+- **Draw**: walls with snapping and typed lengths, rooms found for you, single and double doors, archways and windows, several floors joined by stairs, and a plan image to trace over.
+- **Furnish**: 111 low-poly pieces are included, and you can add `.glb` models of your own. Stretch any piece to fit, and stand small things on tables, worktops and shelves.
 - **Place devices**: lights, switches, fans, blinds and covers, door and window sensors, thermostats and temperature sensors, motion and presence, media players, locks, and any other sensor as a reading.
 - **Use it**: tap a light, switch or blind to work it; press and hold anything for its details. A garage door or gate asks first, and a lock is never worked by a tap.
 - **Dashboard card**: the whole house, a floor or a room, from any saved camera angle, on any device. It follows the sun, so the house is dark at night with the lights that are on showing.
@@ -42,7 +42,10 @@ An update to Diorama needs a restart of Home Assistant; the first install does n
 
 - Select a room to name it, choose its floor and wall colour, and link it to a Home Assistant area. Its devices are then listed first.
 - A device dropped on furniture that suits it becomes that piece: a light on a lamp, a media player on the TV, a thermostat on the radiator.
-- A door or window takes a sensor or a blind of its own: select it and choose one. A door with a sensor swings open; a window with a blind shows how far down it is.
+- A door or window takes a sensor or a blind of its own: select it and choose one. A door with a sensor swings open and shut; one without stands open. A window with a blind shows how far down it is.
+- Select a door to give it two leaves, hang it from the other side or open it the other way. Drag either end of a door or window to change its width.
+- Select a piece of furniture and drag its handles to stretch it, or type its size on the right. Small things (lamps, a microwave, a laptop) stand on whatever table or unit you drop them on, and go with it when it moves. **Off the floor** puts anything at a height: a wall unit, a mirror, a picture.
+- Stairs open the floor above them, and show coming up through it. For a stairwell of another shape, a gallery or a double-height room, select the room upstairs and tick **Open to the floor below**.
 - With nothing selected, the panel on the right takes a floor plan image to trace over.
 - **Floors** adds and arranges floors. **Views** on the 3D side saves camera angles for cards to use.
 

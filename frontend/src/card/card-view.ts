@@ -1,6 +1,7 @@
 import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { aspectRatioValue, type CardConfig } from "../core/card-config";
+import type { Catalogue } from "../core/catalogue";
 import type { Floor, House } from "../core/scene";
 import { cameraFor, resolveView, type ViewResult } from "../core/views";
 import { splitAround } from "../core/localize";
@@ -27,17 +28,25 @@ export class DioramaCardView extends LitElement {
   /** The saved view the card looks from, worked out with `view`. */
   private camera?: ReturnType<typeof cameraFor>;
   /** What `view` was worked out from, to do it again only when one changes. */
-  private viewFrom: [House?, ReadonlyMap<string, Floor>?, CardConfig?] = [];
+  private viewFrom: [House?, ReadonlyMap<string, Floor>?, CardConfig?, Catalogue?] = [];
   private sceneLoading = false;
 
   protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has("hass")) this.scene.setHass(this.hass);
     if (changed.has("config")) this.scene.setRequest(this.config);
-    const { house, floors } = this.scene;
-    const [fromHouse, fromFloors, fromConfig] = this.viewFrom;
-    if (house !== fromHouse || floors !== fromFloors || this.config !== fromConfig) {
-      this.viewFrom = [house, floors, this.config];
-      this.view = house && this.config ? resolveView(house, floors, this.config) : { status: "loading" };
+    const { house, floors, catalogue } = this.scene;
+    const [fromHouse, fromFloors, fromConfig, fromCatalogue] = this.viewFrom;
+    if (
+      house !== fromHouse ||
+      floors !== fromFloors ||
+      this.config !== fromConfig ||
+      catalogue !== fromCatalogue
+    ) {
+      this.viewFrom = [house, floors, this.config, catalogue];
+      this.view =
+        house && this.config
+          ? resolveView(house, floors, this.config, catalogue)
+          : { status: "loading" };
       this.camera =
         house && this.config && this.view.status === "ready"
           ? cameraFor(house, this.view.floors, this.config.camera)

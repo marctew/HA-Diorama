@@ -6,10 +6,11 @@ so each piece used is listed here with the size it should really be, and is
 rebuilt like the basic set: real size, standing on the floor, middle on the
 origin, facing +Z, in the one palette.
 
-Only pieces that stand on the floor or hang from the ceiling are taken:
-furniture cannot yet be put on a table or a wall. To add one, give it an
-entry in PIECES, run tools/build_catalogue.py, and look at it in the drawer
-beside a 2.4 m wall.
+Small things are marked `tabletop`, so that the editor stands them on
+whatever they are dropped on, and things for a wall have a `mount_height`.
+The kit's own walls, floors and doorways are not taken: Diorama draws those.
+To add a piece, give it an entry in PIECES, run tools/build_catalogue.py, and
+look at it in the drawer beside a 2.4 m wall.
 """
 
 from __future__ import annotations
@@ -69,6 +70,11 @@ class Piece:
     against_wall: bool = False
     hanging: bool = False
     kind: str | None = None
+    surface: bool = False
+    surface_height: float | None = None
+    tabletop: bool = False
+    stairs: bool = False
+    mount_height: float | None = None
     # Materials to paint differently from PAINT, by the kit's name for them.
     paint: tuple[tuple[str, str], ...] = ()
 
@@ -123,6 +129,11 @@ def _model(piece: Piece) -> Model:
         kind=piece.kind,
         against_wall=piece.against_wall,
         hanging=piece.hanging,
+        surface=piece.surface,
+        surface_height=piece.surface_height,
+        tabletop=piece.tabletop,
+        stairs=piece.stairs,
+        mount_height=piece.mount_height,
     )
 
 
@@ -172,6 +183,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("ottoman", "pouffe"),
         paint=GREY,
+        surface=True,
     ),
     Piece(
         "loungeChair",
@@ -219,6 +231,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("table",),
         width=1.1,
+        surface=True,
     ),
     Piece(
         "tableCoffeeSquare",
@@ -227,6 +240,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("table",),
         width=0.7,
+        surface=True,
     ),
     Piece(
         "sideTable",
@@ -235,6 +249,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("side table", "hall"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "sideTableDrawers",
@@ -243,6 +258,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("drawers", "cabinet"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "cabinetTelevision",
@@ -251,6 +267,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("television", "unit", "media"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "bookcaseClosedWide",
@@ -270,6 +287,7 @@ PIECES: tuple[Piece, ...] = (
         LIVING,
         ("bookcase", "books"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "bookcaseClosedDoors",
@@ -322,6 +340,7 @@ PIECES: tuple[Piece, ...] = (
         ("pot", "houseplant"),
         height=0.5,
         paint=(("wood", "terracotta"),),
+        tabletop=True,
     ),
     # Lighting.
     Piece(
@@ -374,6 +393,7 @@ PIECES: tuple[Piece, ...] = (
         height=0.9,
         depth=0.62,
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "kitchenCabinetDrawer",
@@ -385,6 +405,7 @@ PIECES: tuple[Piece, ...] = (
         height=0.9,
         depth=0.62,
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "kitchenCabinetCornerInner",
@@ -396,6 +417,7 @@ PIECES: tuple[Piece, ...] = (
         height=0.9,
         depth=0.62,
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "kitchenSink",
@@ -451,6 +473,7 @@ PIECES: tuple[Piece, ...] = (
         height=0.85,
         depth=0.6,
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "dryer",
@@ -462,6 +485,7 @@ PIECES: tuple[Piece, ...] = (
         height=0.85,
         depth=0.6,
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "washerDryerStacked",
@@ -483,6 +507,7 @@ PIECES: tuple[Piece, ...] = (
         width=1.2,
         height=0.95,
         depth=0.5,
+        surface=True,
     ),
     Piece(
         "stoolBar", "bar_stool", "Bar stool", KITCHEN, ("seat", "chair"), height=0.75
@@ -496,6 +521,7 @@ PIECES: tuple[Piece, ...] = (
         width=1.8,
         height=0.75,
         depth=0.9,
+        surface=True,
     ),
     Piece(
         "tableCross",
@@ -506,6 +532,7 @@ PIECES: tuple[Piece, ...] = (
         width=1.8,
         height=0.75,
         depth=0.9,
+        surface=True,
     ),
     Piece(
         "chairCushion",
@@ -558,6 +585,7 @@ PIECES: tuple[Piece, ...] = (
         BEDROOM,
         ("bedside table", "nightstand"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "deskCorner",
@@ -566,6 +594,7 @@ PIECES: tuple[Piece, ...] = (
         OFFICE,
         ("table", "work"),
         against_wall=True,
+        surface=True,
     ),
     Piece(
         "chairDesk",
@@ -625,6 +654,206 @@ PIECES: tuple[Piece, ...] = (
         against_wall=True,
         paint=(("carpetWhite", "white"),),
     ),
+    # Things for a table, a worktop or a shelf.
+    Piece(
+        "lampRoundTable",
+        "table_lamp_round",
+        "Table lamp, round shade",
+        LIGHTING,
+        ("light", "bedside"),
+        height=0.45,
+        kind="light",
+        tabletop=True,
+    ),
+    Piece(
+        "lampSquareTable",
+        "table_lamp_square",
+        "Table lamp, square shade",
+        LIGHTING,
+        ("light", "bedside"),
+        height=0.45,
+        kind="light",
+        tabletop=True,
+    ),
+    Piece(
+        "televisionModern",
+        "tv",
+        "Television",
+        LIVING,
+        ("tv", "screen", "media"),
+        width=1.2,
+        kind="media",
+        tabletop=True,
+    ),
+    Piece(
+        "televisionVintage",
+        "tv_old",
+        "Television, old",
+        LIVING,
+        ("tv", "retro", "media"),
+        width=0.6,
+        kind="media",
+        tabletop=True,
+    ),
+    Piece(
+        "radio",
+        "radio",
+        "Radio",
+        LIVING,
+        ("music", "media"),
+        width=0.35,
+        kind="media",
+        tabletop=True,
+    ),
+    Piece(
+        "speakerSmall",
+        "speaker_small",
+        "Speaker, small",
+        LIVING,
+        ("hi-fi", "music", "media", "smart speaker"),
+        height=0.32,
+        kind="media",
+        tabletop=True,
+    ),
+    Piece("books", "books", "Books", LIVING, ("shelf",), width=0.3, tabletop=True),
+    Piece(
+        "kitchenMicrowave",
+        "microwave",
+        "Microwave",
+        KITCHEN,
+        ("oven",),
+        width=0.5,
+        tabletop=True,
+    ),
+    Piece(
+        "toaster",
+        "toaster",
+        "Toaster",
+        KITCHEN,
+        ("appliance",),
+        width=0.3,
+        tabletop=True,
+        kind="switch",
+    ),
+    Piece(
+        "kitchenCoffeeMachine",
+        "coffee_machine",
+        "Coffee machine",
+        KITCHEN,
+        ("appliance", "espresso"),
+        height=0.36,
+        tabletop=True,
+        kind="switch",
+    ),
+    Piece(
+        "kitchenBlender",
+        "blender",
+        "Blender",
+        KITCHEN,
+        ("appliance",),
+        height=0.4,
+        tabletop=True,
+    ),
+    Piece(
+        "laptop", "laptop", "Laptop", OFFICE, ("computer",), width=0.35, tabletop=True
+    ),
+    Piece(
+        "computerScreen",
+        "monitor",
+        "Monitor",
+        OFFICE,
+        ("computer", "screen"),
+        width=0.6,
+        tabletop=True,
+    ),
+    Piece(
+        "computerKeyboard",
+        "keyboard",
+        "Keyboard",
+        OFFICE,
+        ("computer",),
+        width=0.45,
+        tabletop=True,
+    ),
+    # Things for a wall.
+    Piece(
+        "kitchenCabinetUpper",
+        "wall_unit",
+        "Wall unit",
+        KITCHEN,
+        ("cupboard", "cabinet", "upper"),
+        width=0.6,
+        height=0.7,
+        depth=0.35,
+        against_wall=True,
+        mount_height=1.45,
+    ),
+    Piece(
+        "kitchenCabinetUpperDouble",
+        "wall_unit_double",
+        "Wall unit, two doors",
+        KITCHEN,
+        ("cupboard", "cabinet", "upper"),
+        width=0.8,
+        height=0.7,
+        depth=0.35,
+        against_wall=True,
+        mount_height=1.45,
+    ),
+    Piece(
+        "hoodModern",
+        "cooker_hood",
+        "Cooker hood",
+        KITCHEN,
+        ("extractor", "fan"),
+        width=0.6,
+        height=0.6,
+        depth=0.45,
+        against_wall=True,
+        mount_height=1.6,
+        kind="switch",
+    ),
+    Piece(
+        "bathroomMirror",
+        "mirror",
+        "Mirror",
+        BATHROOM,
+        ("wall",),
+        width=0.6,
+        against_wall=True,
+        mount_height=1.15,
+    ),
+    Piece(
+        "bathroomCabinet",
+        "bathroom_cabinet",
+        "Bathroom cabinet",
+        BATHROOM,
+        ("wall", "cupboard"),
+        width=0.5,
+        against_wall=True,
+        mount_height=1.3,
+    ),
+    Piece(
+        "coatRack",
+        "coat_rack",
+        "Coat rack",
+        FITTINGS,
+        ("hall", "hooks", "wall"),
+        width=0.9,
+        against_wall=True,
+        mount_height=1.55,
+    ),
+    Piece(
+        "lampWall",
+        "wall_light",
+        "Wall light",
+        LIGHTING,
+        ("light", "sconce"),
+        width=0.3,
+        against_wall=True,
+        mount_height=1.7,
+        kind="light",
+    ),
     # Fittings.
     Piece(
         "stairsOpen",
@@ -636,6 +865,7 @@ PIECES: tuple[Piece, ...] = (
         width=0.9,
         height=2.6,
         depth=3.3,
+        stairs=True,
     ),
     Piece(
         "stairsCorner",
@@ -646,6 +876,7 @@ PIECES: tuple[Piece, ...] = (
         width=2.4,
         height=2.6,
         depth=1.95,
+        stairs=True,
     ),
     Piece(
         "coatRackStanding",

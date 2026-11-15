@@ -14,7 +14,7 @@ import {
 import { addWall, commit, moveVertices } from "../src/core/plan";
 import type { Floor } from "../src/core/scene";
 import { calibrate, newTrace, traceBox } from "../src/core/trace";
-import { assertConsistent, counter, draw, emptyFloor, p, rectangle, vertexAt, wallBetween } from "./helpers";
+import { assertConsistent, counter, draw, emptyFloor, p, rectangle, vertexAt, wallBetween, DOOR_DEFAULTS } from "./helpers";
 
 const room = (): Floor => rectangle(emptyFloor(), counter(), 0, 0, 6, 4);
 const top = (floor: Floor) => wallBetween(floor, [0, 0], [6, 0]);
@@ -25,7 +25,7 @@ describe("placing openings", () => {
     const placed = placeOpening(floor, top(floor), "door", { x: 2, y: 0.3 }, counter());
     expect(placed.id).toBe("o1");
     expect(placed.floor.openings).toEqual([
-      { id: "o1", wall: top(floor), type: "door", offset: 1.6, width: 0.8, height: 2, sill: 0, entity_id: null },
+      { id: "o1", wall: top(floor), type: "door", offset: 1.6, width: 0.8, height: 2, sill: 0, entity_id: null , ...DOOR_DEFAULTS},
     ]);
   });
 

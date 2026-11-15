@@ -84,6 +84,16 @@ def build() -> dict[str, bytes]:
             entry["hanging"] = True
         if model.kind:
             entry["kind"] = model.kind
+        if model.surface:
+            entry["surface"] = True
+            if model.surface_height is not None:
+                entry["surface_height"] = model.surface_height
+        if model.tabletop:
+            entry["tabletop"] = True
+        if model.stairs:
+            entry["stairs"] = True
+        if model.mount_height is not None:
+            entry["mount_height"] = model.mount_height
         models.append(entry)
     catalogue = {"version": CATALOGUE_VERSION, "sources": SOURCES, "models": models}
     files["catalogue.json"] = (json.dumps(catalogue, indent=2) + "\n").encode()

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { addWall } from "../src/core/plan";
 import type { Floor, House } from "../src/core/scene";
 import { cameraFor, camerasFor, floorsNeeded, resolveView, roomOnly } from "../src/core/views";
-import { assertConsistent, counter, draw, emptyFloor, p, rectangle } from "./helpers";
+import { assertConsistent, counter, draw, emptyFloor, p, rectangle, DOOR_DEFAULTS, ITEM_DEFAULTS } from "./helpers";
 
 function twoRooms(id = "f1"): Floor {
   const makeId = counter();
@@ -18,11 +18,11 @@ function twoRooms(id = "f1"): Floor {
       { ...right, name: "" },
     ],
     openings: [
-      { id: "o1", wall: floor.walls[0].id, type: "door", offset: 0.5, width: 0.8, height: 2, sill: 0, entity_id: null },
+      { id: "o1", wall: floor.walls[0].id, type: "door", offset: 0.5, width: 0.8, height: 2, sill: 0, entity_id: null , ...DOOR_DEFAULTS},
     ],
     items: [
-      { id: "i1", model: "basics/floor_lamp", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: left.id },
-      { id: "i2", model: "basics/sofa_2", x: 6, y: 2, z: 0, rotation: 0, scale: 1, room: right.id },
+      { id: "i1", model: "basics/floor_lamp", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: left.id , ...ITEM_DEFAULTS},
+      { id: "i2", model: "basics/sofa_2", x: 6, y: 2, z: 0, rotation: 0, scale: 1, room: right.id , ...ITEM_DEFAULTS},
     ],
     fixtures: [
       { id: "x1", entity_id: "light.a", kind: "light", x: 1, y: 1, z: 0, room: left.id, item: "i1", model: null, options: {} },

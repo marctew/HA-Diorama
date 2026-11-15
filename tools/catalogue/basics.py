@@ -30,6 +30,16 @@ class Model:
     against_wall: bool = field(default=False)
     # Hangs from the ceiling instead of standing on the floor.
     hanging: bool = field(default=False)
+    # Small things can be stood on it. Its top is `surface_height` up, or at
+    # its full height when that is not given.
+    surface: bool = field(default=False)
+    surface_height: float | None = field(default=None)
+    # Small enough to be stood on a surface.
+    tabletop: bool = field(default=False)
+    # A staircase: makes a hole in the floor above it.
+    stairs: bool = field(default=False)
+    # Goes on a wall: how far off the floor it is put to begin with.
+    mount_height: float | None = field(default=None)
 
 
 def _sofa(mesh: Mesh, width: float, fabric: str) -> None:
@@ -385,6 +395,7 @@ MODELS: tuple[Model, ...] = (
         ("television", "media"),
         kind="media",
         against_wall=True,
+        surface=True,
     ),
     Model(
         "bookcase",
@@ -411,6 +422,7 @@ MODELS: tuple[Model, ...] = (
         table_lamp,
         ("light", "bedside"),
         kind="light",
+        tabletop=True,
     ),
     Model(
         "ceiling_light",
@@ -422,7 +434,12 @@ MODELS: tuple[Model, ...] = (
         hanging=True,
     ),
     Model(
-        "dining_table", "Dining table", "Kitchen and dining", dining_table, ("table",)
+        "dining_table",
+        "Dining table",
+        "Kitchen and dining",
+        dining_table,
+        ("table",),
+        surface=True,
     ),
     Model(
         "dining_table_small",
@@ -430,6 +447,7 @@ MODELS: tuple[Model, ...] = (
         "Kitchen and dining",
         dining_table_small,
         ("table", "breakfast"),
+        surface=True,
     ),
     Model("chair", "Dining chair", "Kitchen and dining", chair, ("seat",)),
     Model(
@@ -439,6 +457,7 @@ MODELS: tuple[Model, ...] = (
         kitchen_base,
         ("cupboard", "worktop", "counter"),
         against_wall=True,
+        surface=True,
     ),
     Model(
         "kitchen_sink",
@@ -471,6 +490,7 @@ MODELS: tuple[Model, ...] = (
         washing_machine,
         ("laundry", "dryer", "dishwasher"),
         against_wall=True,
+        surface=True,
     ),
     Model("bed_double", "Double bed", "Bedroom", bed_double, (), against_wall=True),
     Model("bed_king", "King size bed", "Bedroom", bed_king, (), against_wall=True),
@@ -482,6 +502,7 @@ MODELS: tuple[Model, ...] = (
         bedside_table,
         ("nightstand", "cabinet"),
         against_wall=True,
+        surface=True,
     ),
     Model(
         "wardrobe",
@@ -498,6 +519,7 @@ MODELS: tuple[Model, ...] = (
         chest_of_drawers,
         ("dresser",),
         against_wall=True,
+        surface=True,
     ),
     Model(
         "desk",
@@ -506,6 +528,8 @@ MODELS: tuple[Model, ...] = (
         desk,
         ("computer", "study"),
         against_wall=True,
+        surface=True,
+        surface_height=0.74,
     ),
     Model("office_chair", "Office chair", "Office", office_chair, ("seat", "swivel")),
     Model("bath", "Bath", "Bathroom", bath, ("tub",), against_wall=True),
@@ -528,5 +552,5 @@ MODELS: tuple[Model, ...] = (
         kind="climate",
         against_wall=True,
     ),
-    Model("stairs", "Stairs", "Fittings", stairs, ("staircase", "steps")),
+    Model("stairs", "Stairs", "Fittings", stairs, ("staircase", "steps"), stairs=True),
 )

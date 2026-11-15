@@ -12,6 +12,7 @@ import {
   rectangle,
   vertexAt,
   wallBetween,
+  ITEM_DEFAULTS,
 } from "./helpers";
 
 const area = (floor: Floor, roomId: string) =>
@@ -179,7 +180,7 @@ describe("detectRooms keeps what is known about a room", () => {
     const room = floor.rooms[0].id;
     floor = {
       ...floor,
-      items: [{ id: "i1", model: "kit/sofa", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room }],
+      items: [{ id: "i1", model: "kit/sofa", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room, ...ITEM_DEFAULTS }],
       fixtures: [
         {
           id: "x1",
@@ -211,6 +212,7 @@ describe("detectRooms", () => {
       boundary: floor.rooms[0].boundary,
       floor_style: "default",
       wall_colour: "#e8e4dc",
+      open: false,
     });
   });
 

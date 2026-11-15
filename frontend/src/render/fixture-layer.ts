@@ -1,7 +1,8 @@
 // What fixtures add to the 3D scene: a marker to see and tap; for lights a
 // glow and a wash of colour over the floor of their room; a reading beside a
 // sensor; a tint over the floor of a room that is warm, cold or occupied; a
-// leaf in a door that has a sensor and a blind in a window that has one.
+// leaf in every door, shut or open as its sensor says, and a blind in a
+// window that has one.
 // Lights are faked rather than simulated: it looks right for the style and
 // costs almost nothing, on any device.
 
@@ -34,6 +35,7 @@ import { MISSING, type FixtureVisual } from "../core/bindings";
 import type { Catalogue } from "../core/catalogue";
 import { allFixtures, fixtureHeight, isOpeningFixture } from "../core/fixtures";
 import { triangulate } from "../core/geometry";
+import { doorLeaves } from "../core/openings";
 import { roomPolygon } from "../core/rooms";
 import type { Fixture, Floor, Opening } from "../core/scene";
 
@@ -75,6 +77,13 @@ const WASH_FRAGMENT = `
   }
 `;
 
+/** A door leaf: its angle when shut, and which way it turns to open. */
+interface Leaf {
+  mesh: Mesh;
+  shut: number;
+  turn: number;
+}
+
 interface Entry {
   fixture: Fixture;
   /** Where its light or marker is, in the scene. */
@@ -88,8 +97,8 @@ interface Entry {
   tint?: Mesh;
   tintMaterial?: MeshBasicMaterial;
   label?: { sprite: Sprite; material: SpriteMaterial; texture: CanvasTexture; shown: string };
-  /** The leaf of a door, and the angle it has when shut. */
-  leaf?: { mesh: Mesh; shut: number };
+  /** The leaves of the door this fixture is the sensor of. */
+  leaves?: Leaf[];
   /** The blind of a window, and the height of the window. */
   blind?: { mesh: Mesh; height: number };
 }
@@ -98,6 +107,8 @@ export class FixtureLayer {
   readonly group = new Group();
 
   private entries: Entry[] = [];
+  /** Every door leaf, with or without a sensor. */
+  private leaves: Leaf[] = [];
   private visuals: ReadonlyMap<string, FixtureVisual> = new Map();
   private readonly lamps: PointLight[] = [];
   private readonly glowTexture = makeGlowTexture();
@@ -129,9 +140,18 @@ export class FixtureLayer {
   ): void {
     this.clear();
     for (const { floor, elevation } of floors) {
+      // Every door has its leaves; a sensor, if it has one, moves them.
+      const doors = new Map<string, Leaf[]>();
+      for (const opening of floor.openings) {
+        const leaves = this.buildLeaves(opening, floor, elevation, wallMesh);
+        if (leaves.length > 0) doors.set(opening.id, leaves);
+        this.leaves.push(...leaves);
+      }
       for (const fixture of allFixtures(floor)) {
         const entry = this.build(fixture, floor, elevation, catalogue);
-        if (isOpeningFixture(fixture)) this.buildOpening(entry, floor, elevation, wallMesh);
+        if (isOpeningFixture(fixture)) {
+          this.buildOpening(entry, floor, elevation, wallMesh, doors);
+        }
         this.entries.push(entry);
       }
     }
@@ -208,12 +228,15 @@ export class FixtureLayer {
       entry.tint?.geometry.dispose();
       entry.label?.material.dispose();
       entry.label?.texture.dispose();
-      // These hang off a wall, not this group.
-      for (const part of [entry.leaf?.mesh, entry.blind?.mesh]) {
-        part?.removeFromParent();
-        part?.geometry.dispose();
-      }
+      // This hangs off a wall, not this group.
+      entry.blind?.mesh.removeFromParent();
+      entry.blind?.mesh.geometry.dispose();
     }
+    for (const leaf of this.leaves) {
+      leaf.mesh.removeFromParent();
+      leaf.mesh.geometry.dispose();
+    }
+    this.leaves = [];
     this.entries = [];
     for (const child of [...this.group.children]) {
       if (!(child instanceof PointLight)) this.group.remove(child);
@@ -287,8 +310,50 @@ export class FixtureLayer {
     return entry;
   }
 
-  /** A door's leaf or a window's blind, hung in the wall. */
-  private buildOpening(entry: Entry, floor: Floor, elevation: number, wallMesh: WallLookup): void {
+  /** The leaves of a door, hung in its wall and standing open. */
+  private buildLeaves(
+    opening: Opening,
+    floor: Floor,
+    elevation: number,
+    wallMesh: WallLookup,
+  ): Leaf[] {
+    const wall = floor.walls.find((candidate) => candidate.id === opening.wall);
+    const a = floor.vertices.find((vertex) => vertex.id === wall?.a);
+    const b = floor.vertices.find((vertex) => vertex.id === wall?.b);
+    if (!wall || !a || !b) return [];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) return [];
+    const along = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+    // Turning about the vertical runs the other way in three.js from the plan.
+    const angle = -Math.atan2(along.y, along.x);
+    const parent = wallMesh(floor.id, wall.id);
+    // A wall's mesh is already at its floor's height.
+    const base = parent ? 0 : elevation;
+    return doorLeaves(opening).map((leaf) => {
+      const mesh = new Mesh(new BoxGeometry(1, 1, 0.045).translate(0.5, 0.5, 0), this.leafMaterial);
+      mesh.position.set(a.x + along.x * leaf.hinge, base + opening.sill, a.y + along.y * leaf.hinge);
+      mesh.scale.set(leaf.width, opening.height, 1);
+      // A leaf hung from the far end lies back along the wall, and turns the
+      // other way to open to the same side.
+      const shut = leaf.towards === 1 ? angle : angle + Math.PI;
+      const turn = -leaf.towards * opening.swing * DOOR_SWING;
+      mesh.rotation.y = shut + turn;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      (parent ?? this.group).add(mesh);
+      return { mesh, shut, turn };
+    });
+  }
+
+  /** What a door's or window's own entity adds: a blind for a cover, and for
+   * a sensor the leaves it moves. */
+  private buildOpening(
+    entry: Entry,
+    floor: Floor,
+    elevation: number,
+    wallMesh: WallLookup,
+    doors: ReadonlyMap<string, Leaf[]>,
+  ): void {
     const opening = floor.openings.find(
       (candidate: Opening) => `opening:${candidate.id}` === entry.fixture.id,
     );
@@ -299,14 +364,14 @@ export class FixtureLayer {
     const length = Math.hypot(b.x - a.x, b.y - a.y);
     if (length === 0) return;
     const along = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
-    // Turning about the vertical runs the other way in three.js from the plan.
     const angle = -Math.atan2(along.y, along.x);
     const parent = wallMesh(floor.id, wall.id);
-    // A wall's mesh is already at its floor's height.
     const base = parent ? 0 : elevation;
 
     let mesh: Mesh | undefined;
     if (entry.fixture.kind === "cover") {
+      // A door that rolls or lifts has no leaves to swing.
+      for (const leaf of doors.get(opening.id) ?? []) leaf.mesh.visible = false;
       // Hangs from the top of the opening; scaled to how far it is down.
       mesh = new Mesh(new BoxGeometry(1, 1, 1).translate(0, -0.5, 0), this.blindMaterial);
       const middle = opening.offset + opening.width / 2;
@@ -316,13 +381,8 @@ export class FixtureLayer {
       entry.blind = { mesh, height: opening.height };
       // The blind says it all, and would hide a marker anyway.
       entry.marker.visible = false;
-    } else if (opening.type === "door") {
-      // Hinged at the end of the opening nearer the wall's start.
-      mesh = new Mesh(new BoxGeometry(1, 1, 0.045).translate(0.5, 0.5, 0), this.leafMaterial);
-      mesh.position.set(a.x + along.x * opening.offset, base + opening.sill, a.y + along.y * opening.offset);
-      mesh.scale.set(opening.width, opening.height, 1);
-      mesh.rotation.y = angle;
-      entry.leaf = { mesh, shut: angle };
+    } else {
+      entry.leaves = doors.get(opening.id);
     }
     if (!mesh) return;
     mesh.castShadow = true;
@@ -432,7 +492,7 @@ export class FixtureLayer {
       }
       this.applyLabel(entry, visual);
       const open = visual.available ? (visual.open ?? 0) : 0;
-      if (entry.leaf) entry.leaf.mesh.rotation.y = entry.leaf.shut - open * DOOR_SWING;
+      for (const leaf of entry.leaves ?? []) leaf.mesh.rotation.y = leaf.shut + leaf.turn * open;
       if (entry.blind) {
         // Never quite gone: rolled up, it is still a strip at the top.
         const down = Math.max(0.07 / entry.blind.height, 1 - open);

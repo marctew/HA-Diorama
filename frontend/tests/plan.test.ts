@@ -20,6 +20,7 @@ import {
   rectangle,
   vertexAt,
   wallBetween,
+  DOOR_DEFAULTS,
 } from "./helpers";
 
 const areas = (floor: Floor) =>
@@ -132,7 +133,7 @@ describe("openings on a wall that is split", () => {
     const makeId = counter();
     let floor = draw(emptyFloor(), makeId, [0, 0], [6, 0]);
     const wall = floor.walls[0].id;
-    const opening = { type: "door" as const, width: 0.8, height: 2, sill: 0, entity_id: null };
+    const opening = { type: "door" as const, width: 0.8, height: 2, sill: 0, entity_id: null, ...DOOR_DEFAULTS };
     floor = {
       ...floor,
       openings: [
@@ -224,7 +225,7 @@ describe("deleting", () => {
     const makeId = counter();
     let floor = rectangle(emptyFloor(), makeId, 0, 0, 6, 4);
     const top = wallBetween(floor, [0, 0], [6, 0]);
-    const opening = { type: "window" as const, width: 1, height: 1, sill: 1, entity_id: null };
+    const opening = { type: "window" as const, width: 1, height: 1, sill: 1, entity_id: null, ...DOOR_DEFAULTS };
     floor = {
       ...floor,
       openings: [
@@ -259,7 +260,7 @@ describe("deleting", () => {
     floor = {
       ...floor,
       openings: [
-        { id: "o1", wall: right, type: "door", offset: 0.5, width: 1, height: 2, sill: 0, entity_id: null },
+        { id: "o1", wall: right, type: "door", offset: 0.5, width: 1, height: 2, sill: 0, entity_id: null , ...DOOR_DEFAULTS},
       ],
     };
     // The door is 0.5 m in from x = 6, so it spans x = 4.5 to 5.5.
@@ -309,7 +310,7 @@ describe("deleting", () => {
     floor = {
       ...floor,
       openings: [
-        { id: "o1", wall, type: "window", offset: 1, width: 1, height: 1, sill: 1, entity_id: null },
+        { id: "o1", wall, type: "window", offset: 1, width: 1, height: 1, sill: 1, entity_id: null, ...DOOR_DEFAULTS },
       ],
     };
     expect(deleteWalls(floor, new Set([wall]), makeId).openings).toEqual([]);

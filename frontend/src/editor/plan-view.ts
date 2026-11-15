@@ -21,13 +21,19 @@ import {
 } from "../core/geometry";
 import {
   itemFootprint,
+  itemScale,
   moveItems,
   normaliseRotation,
   placeItem,
   snapToWall,
+  stretchItemTo,
+  updateItems,
 } from "../core/items";
+import { restack } from "../core/stacking";
 import {
+  doorLeaves,
   moveOpening,
+  resizeOpening,
   nearestWall,
   openingAt,
   openingEnds,
@@ -51,6 +57,10 @@ const VERTEX_HIT_PIXELS = 10;
 const WALL_HIT_PIXELS = 7;
 const BADGE_RADIUS = 10;
 const BADGE_HIT_PIXELS = 13;
+/** How near a handle the pointer has to be to grab it, in pixels. */
+const HANDLE_REACH_PIXELS = 8;
+/** How far outside a piece of furniture its handles sit, in pixels. */
+const HANDLE_OFFSET_PIXELS = 11;
 /** How near a wall the pointer has to be to put a door or window in it. */
 const OPENING_REACH_PIXELS = 16;
 const DRAG_START_PIXELS = 4;
@@ -61,10 +71,18 @@ const GRID = 0.05;
 
 type Hit = { kind: "vertex" | "wall" | "item" | "fixture" | "opening" | "room"; id: string };
 
+/** What dragging a handle does. */
+type HandleDrag =
+  /** One end of a door or window being dragged along its wall. */
+  | { kind: "opening-end"; id: string; end: "start" | "end" }
+  /** One side of a piece of furniture being dragged out or in. */
+  | { kind: "stretch"; id: string; axis: "width" | "depth"; side: 1 | -1 };
+
 type Drag =
   | { kind: "pan"; pointer: number; last: Point }
   | { kind: "marquee"; pointer: number; start: Point; end: Point }
   | { kind: "opening"; pointer: number; start: Point; id: string; moved: boolean }
+  | (HandleDrag & { pointer: number })
   | {
       kind: "move";
       pointer: number;
@@ -102,6 +120,8 @@ export class DioramaPlanView extends LitElement {
   @property() placingKind: FixtureKind = "switch";
   /** What the door and window tool places. */
   @property() openingType: OpeningType = "door";
+  /** Where stairs come up from the floor below: outlines to show. */
+  @property({ attribute: false }) holes: readonly (readonly Point[])[] = [];
   /** A plan image to show under the drawing, and its size in pixels. */
   @property({ attribute: false }) traceImage?: { url: string; width: number; height: number };
   /** Waiting for two clicks on the image, to set its scale. */
@@ -278,11 +298,13 @@ export class DioramaPlanView extends LitElement {
         ${floor
           ? [
               this.renderRooms(floor),
+              this.renderHoles(),
               this.renderItems(floor),
               this.renderWalls(floor),
               this.renderOpenings(floor),
               this.renderVertices(floor),
               this.renderFixtures(floor),
+              this.renderHandles(floor),
             ]
           : nothing}
         ${this.renderGhost()} ${this.renderDeviceGhost()} ${this.renderOpeningGhost(floor)}
@@ -342,7 +364,7 @@ export class DioramaPlanView extends LitElement {
       const centre = toScreen(this.view, interiorPoint(world));
       return svg`
         <polygon
-          class="room ${selected ? "selected" : ""}"
+          class="room ${selected ? "selected" : ""} ${room.open ? "open" : ""}"
           points=${points.map((point) => `${point.x},${point.y}`).join(" ")}
         />
         ${
@@ -396,6 +418,68 @@ export class DioramaPlanView extends LitElement {
     `;
   }
 
+  /** Where the floor is cut away for stairs coming up from below. */
+  private renderHoles(): TemplateResult[] {
+    return this.holes.map((hole) => {
+      const points = hole.map((point) => toScreen(this.view, point));
+      return svg`<polygon
+        class="stairwell"
+        points=${points.map((point) => `${point.x},${point.y}`).join(" ")}
+      />`;
+    });
+  }
+
+  /** The handles of the one thing selected: the sides of a piece of
+   * furniture, or the ends of a door or window. */
+  private handles(
+    floor: Floor,
+  ): { at: Point; drag: HandleDrag }[] {
+    const selection = this.selection;
+    const only =
+      selection.items.length + selection.openings.length === 1 &&
+      selection.vertices.length + selection.walls.length + selection.fixtures.length === 0;
+    if (!only || this.readonly || this.tool !== "select") return [];
+    const middle = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    if (selection.items.length === 1) {
+      const item = floor.items.find((candidate) => candidate.id === selection.items[0]);
+      if (!item) return [];
+      const [backLeft, backRight, frontRight, frontLeft] = itemFootprint(
+        item,
+        findModel(this.catalogue, item.model),
+      ).map((point) => toScreen(this.view, point));
+      const id = item.id;
+      const centre = middle(backLeft, frontRight);
+      // A little outside the outline, so that something small can still be
+      // picked up by its middle.
+      const outside = (edge: Point): Point => {
+        const reach = distance(centre, edge) || 1;
+        return {
+          x: edge.x + ((edge.x - centre.x) / reach) * HANDLE_OFFSET_PIXELS,
+          y: edge.y + ((edge.y - centre.y) / reach) * HANDLE_OFFSET_PIXELS,
+        };
+      };
+      return [
+        { at: outside(middle(backRight, frontRight)), drag: { kind: "stretch", id, axis: "width", side: 1 } },
+        { at: outside(middle(backLeft, frontLeft)), drag: { kind: "stretch", id, axis: "width", side: -1 } },
+        { at: outside(middle(frontLeft, frontRight)), drag: { kind: "stretch", id, axis: "depth", side: 1 } },
+        { at: outside(middle(backLeft, backRight)), drag: { kind: "stretch", id, axis: "depth", side: -1 } },
+      ];
+    }
+    const opening = floor.openings.find((candidate) => candidate.id === selection.openings[0]);
+    const ends = opening && openingEnds(floor, opening);
+    if (!opening || !ends) return [];
+    return [
+      { at: toScreen(this.view, ends.start), drag: { kind: "opening-end", id: opening.id, end: "start" } },
+      { at: toScreen(this.view, ends.end), drag: { kind: "opening-end", id: opening.id, end: "end" } },
+    ];
+  }
+
+  private renderHandles(floor: Floor): TemplateResult[] {
+    return this.handles(floor).map(
+      ({ at }) => svg`<rect class="handle" x=${at.x - 4.5} y=${at.y - 4.5} width="9" height="9" rx="2" />`,
+    );
+  }
+
   private renderGhost(): TemplateResult | typeof nothing {
     if (!this.ghost || !this.placing || this.readonly) return nothing;
     const item: Item = {
@@ -407,6 +491,9 @@ export class DioramaPlanView extends LitElement {
       rotation: this.ghost.rotation,
       scale: 1,
       room: null,
+      stretch: [1, 1, 1],
+      on: null,
+      cut_above: true,
     };
     return this.renderFootprint(item, this.placing, "item ghost");
   }
@@ -497,7 +584,7 @@ export class DioramaPlanView extends LitElement {
 
   private renderOpening(
     floor: Floor,
-    opening: Pick<Opening, "wall" | "offset" | "width" | "type">,
+    opening: Pick<Opening, "wall" | "offset" | "width" | "type" | "leaves" | "hinge" | "swing">,
     classes: string,
   ): TemplateResult {
     const ends = openingEnds(floor, opening);
@@ -512,14 +599,30 @@ export class DioramaPlanView extends LitElement {
     const half = Math.max(2.5, ends.thickness * this.view.scale) / 2 + 0.75;
     const corner = (along: Point, side: number) => `${along.x - uy * half * side},${along.y + ux * half * side}`;
     const gap = `${corner(a, 1)} ${corner(b, 1)} ${corner(b, -1)} ${corner(a, -1)}`;
+    const pixels = length / opening.width;
     const symbol =
-      opening.type === "door"
-        ? // The leaf, standing open, and the sweep of its swing.
-          svg`
-            <line x1=${a.x} y1=${a.y} x2=${a.x - uy * length} y2=${a.y + ux * length} />
-            <path d="M ${b.x} ${b.y} A ${length} ${length} 0 0 1 ${a.x - uy * length} ${a.y + ux * length}" class="swing" />
-          `
-        : svg`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`;
+      opening.type === "window"
+        ? svg`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`
+        : // Each leaf, standing open, and the sweep of its swing. An archway
+          // has none.
+          doorLeaves(opening).map((leaf) => {
+            const along = (leaf.hinge - opening.offset) * pixels;
+            const reach = leaf.width * pixels;
+            const hinge = { x: a.x + ux * along, y: a.y + uy * along };
+            const shut = {
+              x: hinge.x + ux * reach * leaf.towards,
+              y: hinge.y + uy * reach * leaf.towards,
+            };
+            const open = {
+              x: hinge.x - uy * reach * opening.swing,
+              y: hinge.y + ux * reach * opening.swing,
+            };
+            const sweep = leaf.towards * opening.swing === 1 ? 1 : 0;
+            return svg`
+              <line x1=${hinge.x} y1=${hinge.y} x2=${open.x} y2=${open.y} />
+              <path d="M ${shut.x} ${shut.y} A ${reach} ${reach} 0 0 ${sweep} ${open.x} ${open.y}" class="swing" />
+            `;
+          });
     return svg`
       <g class="opening ${opening.type} ${classes}">
         <polygon points=${gap} />
@@ -744,6 +847,16 @@ export class DioramaPlanView extends LitElement {
       return;
     }
 
+    // A handle of what is selected comes before anything under it.
+    const handle = this.handles(this.floor).find(
+      ({ at }) => distance(at, screen) <= HANDLE_REACH_PIXELS,
+    );
+    if (handle) {
+      svgElement.setPointerCapture(event.pointerId);
+      this.drag = { ...handle.drag, pointer: event.pointerId };
+      return;
+    }
+
     const hit = this.hitTest(toWorld(this.view, screen));
     if (hit && hit.kind !== "room") {
       const list = (
@@ -875,6 +988,31 @@ export class DioramaPlanView extends LitElement {
       if (wall) this.transient = moveOpening(floor, drag.id, wall, world);
       return;
     }
+    if (drag?.kind === "stretch" && drag.pointer === event.pointerId) {
+      const floor = this.floor!;
+      const world = toWorld(this.view, screen);
+      this.transient = updateItems(floor, new Set([drag.id]), (item) =>
+        stretchItemTo(
+          item,
+          findModel(this.catalogue, item.model),
+          drag.axis,
+          drag.side,
+          world,
+          event.altKey ? 0 : GRID,
+        ),
+      );
+      return;
+    }
+    if (drag?.kind === "opening-end" && drag.pointer === event.pointerId) {
+      this.transient = resizeOpening(
+        this.floor!,
+        drag.id,
+        drag.end,
+        toWorld(this.view, screen),
+        event.altKey ? 0 : GRID,
+      );
+      return;
+    }
     if (this.calibrating) {
       this.requestUpdate();
       return;
@@ -919,7 +1057,7 @@ export class DioramaPlanView extends LitElement {
       // Only a piece moved on its own turns to face away from a wall.
       const alone = drag.items.size === 1 && drag.vertices.size === 0;
       const model = alone ? findModel(this.catalogue, origin.model) : undefined;
-      const placed = this.furnitureAt(world, model, origin.scale, origin.rotation, event);
+      const placed = this.furnitureAt(world, model, itemScale(origin)[2], origin.rotation, event);
       dx = placed.point.x - origin.x;
       dy = placed.point.y - origin.y;
       if (alone) rotation = placed.rotation;
@@ -968,13 +1106,23 @@ export class DioramaPlanView extends LitElement {
       if (drag.moved && slid) this.edit(slid);
       return;
     }
+    if (drag.kind === "stretch" || drag.kind === "opening-end") {
+      const changed = this.transient;
+      this.transient = undefined;
+      if (changed && changed !== this.floor) this.edit(changed);
+      return;
+    }
     if (drag.kind !== "move") return;
     const moved = this.transient;
     this.transient = undefined;
     this.target = undefined;
     if (!drag.moved || !moved) return;
-    // Walls only need tidying if a corner moved.
-    this.edit(drag.vertices.size > 0 ? commit(moved) : moved);
+    // Walls only need tidying if a corner moved. Something small that was
+    // dropped on a table now stands on it; dragged off, it is on the floor.
+    const tidied = drag.vertices.size > 0 ? commit(moved) : moved;
+    this.edit(
+      drag.items.size > 0 ? restack(tidied, this.catalogue, new Set(drag.items.keys())) : tidied,
+    );
   }
 
   private onPointerLeave(): void {
@@ -1059,8 +1207,17 @@ export class DioramaPlanView extends LitElement {
   private placeFurniture(at: { point: Point; rotation: number }): void {
     const floor = this.floor;
     if (!floor || !this.placing) return;
-    const placed = placeItem(floor, this.placing.id, at.point, at.rotation);
-    this.dispatchEvent(new CustomEvent("plan-edit", { detail: { floor: placed.floor } }));
+    const placed = placeItem(
+      floor,
+      this.placing.id,
+      at.point,
+      at.rotation,
+      undefined,
+      this.placing.mount_height ?? 0,
+    );
+    // A lamp put on a table stands on it.
+    const stood = restack(placed.floor, this.catalogue, new Set([placed.id]));
+    this.dispatchEvent(new CustomEvent("plan-edit", { detail: { floor: stood } }));
     // Not selected: the next click places another.
   }
 
@@ -1145,17 +1302,22 @@ export class DioramaPlanView extends LitElement {
     // Furniture under the pointer: a selected piece first, so that what was
     // just picked or copied is what gets dragged; then the smallest (a lamp on
     // a rug wins); then the one drawn last, which is the one on top.
-    let item: { id: string; area: number; selected: boolean } | undefined;
+    // Before either: what stands on a piece of furniture comes before the
+    // piece itself, or a lamp could never be picked off a selected table.
+    let item: { id: string; area: number; selected: boolean; stacked: boolean } | undefined;
     for (const candidate of floor.items) {
       const outline = itemFootprint(candidate, findModel(this.catalogue, candidate.model));
       if (!pointInPolygon(world, outline)) continue;
       const area = polygonArea(outline);
       const selected = this.selection.items.includes(candidate.id);
+      const stacked = candidate.on !== null;
       const better =
         !item ||
-        (selected && !item.selected) ||
-        (selected === item.selected && area <= item.area + 1e-9);
-      if (better) item = { id: candidate.id, area, selected };
+        (stacked && !item.stacked) ||
+        (stacked === item.stacked &&
+          ((selected && !item.selected) ||
+            (selected === item.selected && area <= item.area + 1e-9)));
+      if (better) item = { id: candidate.id, area, selected, stacked };
     }
     if (item) return { kind: "item", id: item.id };
 
@@ -1258,6 +1420,25 @@ export class DioramaPlanView extends LitElement {
       }
       .room.selected {
         fill: color-mix(in srgb, var(--diorama-accent) 24%, transparent);
+      }
+      .room.open {
+        fill: color-mix(in srgb, var(--diorama-text) 6%, transparent);
+      }
+      .room.open.selected {
+        fill: color-mix(in srgb, var(--diorama-accent) 16%, transparent);
+      }
+      .stairwell {
+        fill: color-mix(in srgb, var(--diorama-text) 7%, transparent);
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+        stroke-width: 1.5;
+        stroke-dasharray: 5 4;
+        pointer-events: none;
+      }
+      .handle {
+        fill: var(--halo);
+        stroke: var(--diorama-accent);
+        stroke-width: 2;
+        cursor: grab;
       }
       text {
         font-family: var(--ha-font-family-body, Roboto, system-ui, sans-serif);

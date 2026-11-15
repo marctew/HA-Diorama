@@ -19,6 +19,8 @@ import { FixtureStates } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
+import { settleStacks } from "../core/stacking";
+import { floorBelow, stairwell, type Stairwell } from "../core/stairwells";
 import "./catalogue-drawer";
 import "./model-dialog";
 import "./device-drawer";
@@ -92,6 +94,10 @@ export class DioramaEditor extends LitElement {
 
   /** The floor as the 3D view wants it; the same array until the floor changes. */
   private sceneFloors: readonly SceneFloor[] = [];
+  /** The floor under this one, for the stairs that come up from it. */
+  @state() private below?: Floor;
+  private belowWanted?: string;
+  private well: Stairwell = { holes: [] };
 
   @query("diorama-plan-view") private plan?: DioramaPlanView;
 
@@ -157,8 +163,17 @@ export class DioramaEditor extends LitElement {
       this.traceWanted = traceId;
       void this.loadTrace(traceId);
     }
-    if ((changed as Map<PropertyKey, unknown>).has("floor")) {
-      this.sceneFloors = this.floor ? [{ floor: this.floor, elevation: 0 }] : [];
+    if (changed.has("house") || changed.has("floorId") || changed.has("hass")) this.loadBelow();
+    const mine = changed as Map<PropertyKey, unknown>;
+    if (mine.has("floor") || mine.has("below") || mine.has("catalogue") || changed.has("house")) {
+      // The stairs of the floor below come up through this one.
+      this.well =
+        this.house && this.floor && this.below
+          ? stairwell(this.house, this.floor.id, new Map([[this.below.id, this.below]]), this.catalogue)
+          : { holes: [] };
+      this.sceneFloors = this.floor
+        ? [{ floor: this.floor, elevation: 0, holes: this.well.holes, below: this.well.below }]
+        : [];
     }
     if (this.mode !== "plan" && !this.sceneLoaded && !this.sceneFailed) void this.loadScene();
   }
@@ -339,10 +354,29 @@ export class DioramaEditor extends LitElement {
     );
   }
 
+  /** Fetch the floor under this one, if it is not the one already held. */
+  private loadBelow(force = false): void {
+    const under = this.house && this.floorId ? floorBelow(this.house, this.floorId) : undefined;
+    if (under?.id === this.belowWanted && !force) return;
+    this.belowWanted = under?.id;
+    this.below = undefined;
+    if (!under) return;
+    void this.api?.getFloor(under.id).then(
+      (floor) => {
+        if (this.belowWanted === under.id) this.below = floor;
+      },
+      // Without it this floor is simply drawn whole.
+      () => undefined,
+    );
+  }
+
   private onSceneEvent = (event: SceneEvent): void => {
     if (event.type === "catalogue") {
       this.loadCatalogue();
       return;
+    }
+    if (event.type === "reset" || (event.type === "floor" && event.floor_id === this.belowWanted)) {
+      this.loadBelow(true);
     }
     if (!this.saved) return;
     const mine = event.type === "floor" && event.floor_id === this.saved.id;
@@ -355,7 +389,9 @@ export class DioramaEditor extends LitElement {
 
   // Editing.
 
-  private applyEdit(floor: Floor): void {
+  private applyEdit(edited: Floor): void {
+    // Whatever stands on a piece of furniture stays at the height of its top.
+    const floor = settleStacks(edited, this.catalogue);
     if (!this.history || floor === this.floor) return;
     this.history.push(floor);
     this.setFloor(floor);
@@ -554,6 +590,7 @@ export class DioramaEditor extends LitElement {
             .openingType=${this.openingType}
             .traceImage=${this.traceImage}
             ?calibrating=${this.calibrating}
+            .holes=${this.well.holes}
             .units=${this.units}
             @plan-calibrate=${(event: CustomEvent<{ first: Point; second: Point }>) => {
               this.measured = event.detail;
@@ -840,7 +877,7 @@ export class DioramaEditor extends LitElement {
         </button>
       `;
       return html`<div class="choice" role="group" aria-label="What to add">
-        ${kind("door", "Door")} ${kind("window", "Window")}
+        ${kind("door", "Door")} ${kind("window", "Window")} ${kind("archway", "Archway")}
         <span>Click a wall to add one. Esc to finish.</span>
       </div>`;
     }

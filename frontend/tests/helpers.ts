@@ -84,3 +84,11 @@ export function assertConsistent(floor: Floor): void {
     if (!room.boundary.every((id) => vertexIds.has(id))) throw new Error("room without vertex");
   }
 }
+
+/** What the server fills in on an item or an opening that does not say. */
+export const ITEM_DEFAULTS = {
+  stretch: [1, 1, 1] as [number, number, number],
+  on: null,
+  cut_above: true,
+};
+export const DOOR_DEFAULTS = { leaves: 1 as const, hinge: "start" as const, swing: 1 as const };
