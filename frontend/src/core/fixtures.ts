@@ -34,18 +34,17 @@ export function itemToBind(
   });
 }
 
-/** Put an entity on the floor. Dropped on a suitable piece of furniture it
- * attaches to it; otherwise it gets the default model for its kind, if there
- * is one. Returns the floor unchanged if nothing can show this entity yet. */
+/** Put an entity on the floor as a fixture of a kind. Dropped on a suitable
+ * piece of furniture it attaches to it; otherwise it gets the default model
+ * for its kind, if there is one. */
 export function placeFixture(
   floor: Floor,
   catalogue: Catalogue,
   entityId: string,
+  kind: FixtureKind,
   point: Point,
   makeId: MakeId = newId,
-): { floor: Floor; id?: string } {
-  const kind = kindForEntity(entityId);
-  if (!kind) return { floor };
+): { floor: Floor; id: string } {
   const id = makeId("x");
   const onItem = itemToBind(floor, catalogue, kind, point);
   const at = onItem ? { x: onItem.x, y: onItem.y } : { x: round(point.x), y: round(point.y) };
@@ -144,7 +143,15 @@ export function fixtureHeight(
 export interface Registries {
   states: Readonly<Record<string, { attributes: Record<string, unknown> }>>;
   entities?: Readonly<
-    Record<string, { area_id?: string | null; device_id?: string | null; hidden?: boolean }>
+    Record<
+      string,
+      {
+        area_id?: string | null;
+        device_id?: string | null;
+        hidden?: boolean;
+        entity_category?: string | null;
+      }
+    >
   >;
   devices?: Readonly<Record<string, { area_id?: string | null }>>;
 }
@@ -168,8 +175,11 @@ export function entityArea(registries: Registries, entityId: string): string | n
 export function bindableEntities(registries: Registries): EntityChoice[] {
   const choices: EntityChoice[] = [];
   for (const [entityId, state] of Object.entries(registries.states)) {
-    const kind = kindForEntity(entityId);
-    if (!kind || registries.entities?.[entityId]?.hidden) continue;
+    const kind = kindForEntity(entityId, state.attributes);
+    const entry = registries.entities?.[entityId];
+    // Not the hidden ones, nor a device's diagnostics and settings: signal
+    // strength and firmware versions are not furniture.
+    if (!kind || entry?.hidden || entry?.entity_category) continue;
     const friendly = state.attributes.friendly_name;
     choices.push({
       entity_id: entityId,
@@ -183,4 +193,56 @@ export function bindableEntities(registries: Registries): EntityChoice[] {
 
 function round(value: number): number {
   return Number(value.toFixed(4));
+}
+
+/** The entity of a door or window as a fixture, so that it is shown, kept up
+ * to date and tapped like any other. It sits in the middle of its opening.
+ * Its id starts with "opening:" and is not stored. */
+export function openingFixtures(
+  floor: Pick<Floor, "vertices" | "walls" | "openings">,
+  kindOf: (entityId: string) => FixtureKind | undefined,
+): Fixture[] {
+  const fixtures: Fixture[] = [];
+  const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
+  for (const opening of floor.openings) {
+    if (!opening.entity_id) continue;
+    const wall = floor.walls.find((candidate) => candidate.id === opening.wall);
+    const a = wall && position.get(wall.a);
+    const b = wall && position.get(wall.b);
+    if (!a || !b) continue;
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) continue;
+    const along = (opening.offset + opening.width / 2) / length;
+    // A cover on a window is a blind; anything else reports open or shut.
+    const kind = kindOf(opening.entity_id) === "cover" ? "cover" : "opening";
+    fixtures.push({
+      id: openingFixtureId(opening.id),
+      entity_id: opening.entity_id,
+      kind,
+      x: round(a.x + (b.x - a.x) * along),
+      y: round(a.y + (b.y - a.y) * along),
+      z: round(opening.sill + opening.height / 2),
+      room: null,
+      item: null,
+      model: null,
+      options: {},
+    });
+  }
+  return fixtures;
+}
+
+export function openingFixtureId(openingId: string): string {
+  return `opening:${openingId}`;
+}
+
+/** Whether a fixture stands for a door or window rather than being stored. */
+export function isOpeningFixture(fixture: Pick<Fixture, "id">): boolean {
+  return fixture.id.startsWith("opening:");
+}
+
+/** Everything on a floor that stands for an entity: the fixtures placed on
+ * it, and the doors and windows that have one. */
+export function allFixtures(floor: Pick<Floor, "vertices" | "walls" | "openings" | "fixtures">): Fixture[] {
+  const openings = openingFixtures(floor, kindForEntity);
+  return openings.length === 0 ? floor.fixtures : [...floor.fixtures, ...openings];
 }

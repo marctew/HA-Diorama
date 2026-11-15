@@ -1,10 +1,13 @@
-// What fixtures add to the 3D scene: a marker to see and tap, and for lights
-// a glow and a wash of colour over the floor of their room. Lights are faked
-// this way rather than simulated: it looks right for the style and costs
-// almost nothing, on any device.
+// What fixtures add to the 3D scene: a marker to see and tap; for lights a
+// glow and a wash of colour over the floor of their room; a reading beside a
+// sensor; a tint over the floor of a room that is warm, cold or occupied; a
+// leaf in a door that has a sensor and a blind in a window that has one.
+// Lights are faked rather than simulated: it looks right for the style and
+// costs almost nothing, on any device.
 
 import {
   AdditiveBlending,
+  BoxGeometry,
   BufferAttribute,
   BufferGeometry,
   CanvasTexture,
@@ -14,6 +17,9 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  MeshLambertMaterial,
+  type Object3D,
+  type PerspectiveCamera,
   PointLight,
   ShaderMaterial,
   SphereGeometry,
@@ -26,15 +32,27 @@ import {
 } from "three";
 import { MISSING, type FixtureVisual } from "../core/bindings";
 import type { Catalogue } from "../core/catalogue";
-import { fixtureHeight } from "../core/fixtures";
+import { allFixtures, fixtureHeight, isOpeningFixture } from "../core/fixtures";
 import { triangulate } from "../core/geometry";
 import { roomPolygon } from "../core/rooms";
-import type { Fixture, Floor } from "../core/scene";
+import type { Fixture, Floor, Opening } from "../core/scene";
 
 /** How close to a fixture a tap has to land, in CSS pixels: a 44 pixel
  * target however small the fixture is on screen. */
 const TAP_RADIUS = 22;
 const WASH_HEIGHT = 0.012;
+const TINT_HEIGHT = 0.007;
+/** How far a door with a sensor swings when it is open, in radians. */
+const DOOR_SWING = 1.3;
+const LABEL_WIDTH = 256;
+const LABEL_HEIGHT = 96;
+/** How tall a reading is drawn, in metres, and the least it may be on
+ * screen, in CSS pixels: from far off it is drawn bigger, to stay readable. */
+const LABEL_SIZE = 0.26;
+const LABEL_MIN_PIXELS = 22;
+
+/** Finds the mesh of a wall, so that what is in the wall is lowered with it. */
+export type WallLookup = (floorId: string, wallId: string) => Object3D | undefined;
 
 const WASH_VERTEX = `
   varying vec2 vPlan;
@@ -67,6 +85,13 @@ interface Entry {
   glowMaterial: SpriteMaterial;
   wash?: Mesh;
   washMaterial?: ShaderMaterial;
+  tint?: Mesh;
+  tintMaterial?: MeshBasicMaterial;
+  label?: { sprite: Sprite; material: SpriteMaterial; texture: CanvasTexture; shown: string };
+  /** The leaf of a door, and the angle it has when shut. */
+  leaf?: { mesh: Mesh; shut: number };
+  /** The blind of a window, and the height of the window. */
+  blind?: { mesh: Mesh; height: number };
 }
 
 export class FixtureLayer {
@@ -80,6 +105,10 @@ export class FixtureLayer {
   private readonly stemGeometry = new CylinderGeometry(0.012, 0.012, 1, 6).translate(0, 0.5, 0);
   private readonly stemMaterial = new MeshBasicMaterial({ color: 0x8a8f96 });
   private readonly discGeometry = new CircleGeometry(1, 40).rotateX(-Math.PI / 2);
+  private readonly leafMaterial = new MeshLambertMaterial({ color: 0xa9825a });
+  private readonly blindMaterial = new MeshLambertMaterial({ color: 0xe9e4d8 });
+  /** 0 by day to 1 at night: lights show up more in the dark. */
+  private night = 0;
 
   /** `realLights` is how many true point lights to spend on lights that are
    * on, for devices that can afford it. */
@@ -96,13 +125,39 @@ export class FixtureLayer {
   setFloors(
     floors: readonly { floor: Floor; elevation: number }[],
     catalogue: Catalogue | undefined,
+    wallMesh: WallLookup = () => undefined,
   ): void {
     this.clear();
     for (const { floor, elevation } of floors) {
-      for (const fixture of floor.fixtures) {
-        this.entries.push(this.build(fixture, floor, elevation, catalogue));
+      for (const fixture of allFixtures(floor)) {
+        const entry = this.build(fixture, floor, elevation, catalogue);
+        if (isOpeningFixture(fixture)) this.buildOpening(entry, floor, elevation, wallMesh);
+        this.entries.push(entry);
       }
     }
+    this.apply();
+  }
+
+  /** Call before each picture is drawn, with the height of the picture in
+   * CSS pixels: keeps readings big enough to read. */
+  beforeDraw(camera: PerspectiveCamera, viewHeight: number): void {
+    if (viewHeight <= 0) return;
+    const perPixel = (2 * Math.tan((camera.fov * Math.PI) / 360)) / viewHeight;
+    for (const entry of this.entries) {
+      const sprite = entry.label?.sprite;
+      if (!sprite?.visible) continue;
+      const size = Math.max(
+        LABEL_SIZE,
+        camera.position.distanceTo(entry.anchor) * perPixel * LABEL_MIN_PIXELS,
+      );
+      sprite.scale.set((size * LABEL_WIDTH) / LABEL_HEIGHT, size, 1);
+      sprite.position.y = entry.anchor.y + 0.13 + size / 2;
+    }
+  }
+
+  /** How dark it is, 0 (day) to 1 (night). */
+  setNight(night: number): void {
+    this.night = Math.min(1, Math.max(0, night));
     this.apply();
   }
 
@@ -138,6 +193,8 @@ export class FixtureLayer {
     this.stemGeometry.dispose();
     this.stemMaterial.dispose();
     this.discGeometry.dispose();
+    this.leafMaterial.dispose();
+    this.blindMaterial.dispose();
     for (const lamp of this.lamps) lamp.dispose();
   }
 
@@ -147,6 +204,15 @@ export class FixtureLayer {
       entry.glowMaterial.dispose();
       entry.washMaterial?.dispose();
       if (entry.wash && entry.wash.geometry !== this.discGeometry) entry.wash.geometry.dispose();
+      entry.tintMaterial?.dispose();
+      entry.tint?.geometry.dispose();
+      entry.label?.material.dispose();
+      entry.label?.texture.dispose();
+      // These hang off a wall, not this group.
+      for (const part of [entry.leaf?.mesh, entry.blind?.mesh]) {
+        part?.removeFromParent();
+        part?.geometry.dispose();
+      }
     }
     this.entries = [];
     for (const child of [...this.group.children]) {
@@ -163,12 +229,14 @@ export class FixtureLayer {
     const height = catalogue ? fixtureHeight(fixture, floor, catalogue) : fixture.z || 1.2;
     const anchor = new Vector3(fixture.x, elevation + height, fixture.y);
     const hasModel = fixture.item !== null || fixture.model !== null;
+    const inWall = isOpeningFixture(fixture);
 
     const markerMaterial = new MeshBasicMaterial();
     const marker = new Mesh(this.markerGeometry, markerMaterial);
     marker.position.copy(anchor);
+    if (inWall) marker.scale.setScalar(0.8);
     this.group.add(marker);
-    if (!hasModel) {
+    if (!hasModel && !inWall) {
       // Something to stand on, so that a marker in mid-air reads as being
       // somewhere in the room.
       const stem = new Mesh(this.stemGeometry, this.stemMaterial);
@@ -207,7 +275,59 @@ export class FixtureLayer {
       entry.wash.visible = false;
       this.group.add(entry.wash);
     }
+    if (fixture.kind === "climate" || fixture.kind === "presence") {
+      const geometry = this.roomGeometry(fixture, floor, elevation + TINT_HEIGHT);
+      if (geometry) {
+        entry.tintMaterial = new MeshBasicMaterial({ transparent: true, depthWrite: false, opacity: 0 });
+        entry.tint = new Mesh(geometry, entry.tintMaterial);
+        entry.tint.visible = false;
+        this.group.add(entry.tint);
+      }
+    }
     return entry;
+  }
+
+  /** A door's leaf or a window's blind, hung in the wall. */
+  private buildOpening(entry: Entry, floor: Floor, elevation: number, wallMesh: WallLookup): void {
+    const opening = floor.openings.find(
+      (candidate: Opening) => `opening:${candidate.id}` === entry.fixture.id,
+    );
+    const wall = floor.walls.find((candidate) => candidate.id === opening?.wall);
+    const a = floor.vertices.find((vertex) => vertex.id === wall?.a);
+    const b = floor.vertices.find((vertex) => vertex.id === wall?.b);
+    if (!opening || !wall || !a || !b) return;
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    if (length === 0) return;
+    const along = { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+    // Turning about the vertical runs the other way in three.js from the plan.
+    const angle = -Math.atan2(along.y, along.x);
+    const parent = wallMesh(floor.id, wall.id);
+    // A wall's mesh is already at its floor's height.
+    const base = parent ? 0 : elevation;
+
+    let mesh: Mesh | undefined;
+    if (entry.fixture.kind === "cover") {
+      // Hangs from the top of the opening; scaled to how far it is down.
+      mesh = new Mesh(new BoxGeometry(1, 1, 1).translate(0, -0.5, 0), this.blindMaterial);
+      const middle = opening.offset + opening.width / 2;
+      mesh.position.set(a.x + along.x * middle, base + opening.sill + opening.height, a.y + along.y * middle);
+      mesh.scale.set(opening.width * 0.98, opening.height, Math.max(0.04, wall.thickness * 0.5));
+      mesh.rotation.y = angle;
+      entry.blind = { mesh, height: opening.height };
+      // The blind says it all, and would hide a marker anyway.
+      entry.marker.visible = false;
+    } else if (opening.type === "door") {
+      // Hinged at the end of the opening nearer the wall's start.
+      mesh = new Mesh(new BoxGeometry(1, 1, 0.045).translate(0.5, 0.5, 0), this.leafMaterial);
+      mesh.position.set(a.x + along.x * opening.offset, base + opening.sill, a.y + along.y * opening.offset);
+      mesh.scale.set(opening.width, opening.height, 1);
+      mesh.rotation.y = angle;
+      entry.leaf = { mesh, shut: angle };
+    }
+    if (!mesh) return;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    (parent ?? this.group).add(mesh);
   }
 
   /** The floor a light falls on: its room, so that it stops at the walls; a
@@ -218,27 +338,64 @@ export class FixtureLayer {
     elevation: number,
     material: ShaderMaterial,
   ): Mesh {
+    const geometry = this.roomGeometry(fixture, floor, elevation + WASH_HEIGHT);
+    if (geometry) return new Mesh(geometry, material);
+    const disc = new Mesh(this.discGeometry, material);
+    disc.position.set(fixture.x, elevation + WASH_HEIGHT, fixture.y);
+    disc.scale.setScalar(4.5);
+    return disc;
+  }
+
+  /** The floor of a fixture's room, flat, at a height; nothing if it is in
+   * no room. */
+  private roomGeometry(fixture: Fixture, floor: Floor, height: number): BufferGeometry | undefined {
     const room = floor.rooms.find((candidate) => candidate.id === fixture.room);
     const outline = room ? roomPolygon(floor, room) : [];
-    if (outline.length < 3) {
-      const disc = new Mesh(this.discGeometry, material);
-      disc.position.set(fixture.x, elevation + WASH_HEIGHT, fixture.y);
-      disc.scale.setScalar(4.5);
-      return disc;
-    }
+    if (outline.length < 3) return undefined;
     const indices = triangulate(outline);
     const positions = new Float32Array(indices.length * 3);
     // Reversed, to face up: see flat() in core/mesh.ts.
     for (let i = 0; i < indices.length; i += 3) {
       [indices[i], indices[i + 2], indices[i + 1]].forEach((index, corner) => {
         positions[(i + corner) * 3] = outline[index].x;
-        positions[(i + corner) * 3 + 1] = elevation + WASH_HEIGHT;
+        positions[(i + corner) * 3 + 1] = height;
         positions[(i + corner) * 3 + 2] = outline[index].y;
       });
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(positions, 3));
-    return new Mesh(geometry, material);
+    return geometry;
+  }
+
+  /** Show, change or hide the reading beside a fixture. */
+  private applyLabel(entry: Entry, visual: FixtureVisual): void {
+    const text = visual.available ? (visual.label ?? "") : "";
+    if (!text) {
+      if (entry.label) entry.label.sprite.visible = false;
+      return;
+    }
+    if (!entry.label) {
+      const canvas = document.createElement("canvas");
+      canvas.width = LABEL_WIDTH;
+      canvas.height = LABEL_HEIGHT;
+      const texture = new CanvasTexture(canvas);
+      texture.colorSpace = SRGBColorSpace;
+      const material = new SpriteMaterial({ map: texture, transparent: true, depthWrite: false });
+      const sprite = new Sprite(material);
+      sprite.scale.set((LABEL_SIZE * LABEL_WIDTH) / LABEL_HEIGHT, LABEL_SIZE, 1);
+      sprite.position.copy(entry.anchor);
+      sprite.position.y += 0.13 + LABEL_SIZE / 2;
+      sprite.renderOrder = 2;
+      this.group.add(sprite);
+      entry.label = { sprite, material, texture, shown: "" };
+    }
+    entry.label.sprite.visible = true;
+    const [r, g, b] = visual.colour.map((channel) => Math.round(channel * 255));
+    const shown = `${text}|${r},${g},${b}`;
+    if (shown === entry.label.shown) return;
+    entry.label.shown = shown;
+    drawLabel(entry.label.texture.image as HTMLCanvasElement, text, `rgb(${r},${g},${b})`);
+    entry.label.texture.needsUpdate = true;
   }
 
   private apply(): void {
@@ -263,9 +420,23 @@ export class FixtureLayer {
         if (glowing) {
           const uniforms = entry.washMaterial.uniforms;
           (uniforms.uColour.value as Color).copy(colour);
-          uniforms.uStrength.value = 0.1 + 0.22 * visual.level;
+          uniforms.uStrength.value = (0.1 + 0.22 * visual.level) * (1 + 0.3 * this.night);
           uniforms.uRadius.value = 2.4 + 1.6 * visual.level;
         }
+      }
+      if (entry.tint && entry.tintMaterial) {
+        const strength = visual.available ? (visual.tint ?? 0) : 0;
+        entry.tint.visible = strength > 0;
+        entry.tintMaterial.color.copy(colour);
+        entry.tintMaterial.opacity = strength;
+      }
+      this.applyLabel(entry, visual);
+      const open = visual.available ? (visual.open ?? 0) : 0;
+      if (entry.leaf) entry.leaf.mesh.rotation.y = entry.leaf.shut - open * DOOR_SWING;
+      if (entry.blind) {
+        // Never quite gone: rolled up, it is still a strip at the top.
+        const down = Math.max(0.07 / entry.blind.height, 1 - open);
+        entry.blind.mesh.scale.y = Math.min(1, down) * entry.blind.height;
       }
     }
     // The brightest lights get the real point lights.
@@ -302,4 +473,32 @@ function makeGlowTexture(): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;
+}
+
+/** A reading on a dark pill, ringed with its colour. */
+function drawLabel(canvas: HTMLCanvasElement, text: string, colour: string): void {
+  const context = canvas.getContext("2d")!;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  let size = 50;
+  const font = () => `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  context.font = font();
+  // Longer readings are set smaller rather than cut off.
+  while (size > 22 && context.measureText(text).width > canvas.width - 48) {
+    size -= 2;
+    context.font = font();
+  }
+  const width = Math.min(canvas.width - 8, context.measureText(text).width + 44);
+  const height = canvas.height - 16;
+  const left = (canvas.width - width) / 2;
+  context.beginPath();
+  context.roundRect(left, 8, width, height, height / 2);
+  context.fillStyle = "rgba(22, 26, 32, 0.88)";
+  context.fill();
+  context.lineWidth = 5;
+  context.strokeStyle = colour;
+  context.stroke();
+  context.fillStyle = "#fff";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, canvas.width / 2, canvas.height / 2 + 2);
 }

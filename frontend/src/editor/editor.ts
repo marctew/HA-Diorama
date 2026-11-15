@@ -5,7 +5,7 @@ import { browserStorage, clearDraft, loadDraft, saveDraft, type Draft } from "..
 import { History } from "../core/history";
 import { EMPTY_CATALOGUE, type Catalogue, type CatalogueModel } from "../core/catalogue";
 import type { FixtureVisual } from "../core/bindings";
-import { deleteFixtures } from "../core/fixtures";
+import { allFixtures, deleteFixtures } from "../core/fixtures";
 import { deleteItems, duplicateItems, rotateItems, ROTATE_STEP } from "../core/items";
 import type { Point } from "../core/geometry";
 import { deleteOpenings, type OpeningType } from "../core/openings";
@@ -13,7 +13,7 @@ import { deleteVertices, deleteWalls } from "../core/plan";
 import { calibrate, newTrace } from "../core/trace";
 import { parseLength } from "../core/units";
 import { newId } from "../core/ids";
-import type { Camera, Floor, House, SceneEvent } from "../core/scene";
+import type { Camera, FixtureKind, Floor, House, SceneEvent } from "../core/scene";
 import type { UnitSystem } from "../core/units";
 import { FixtureStates } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
@@ -69,6 +69,7 @@ export class DioramaEditor extends LitElement {
   @state() private placing?: CatalogueModel;
   /** The entity the next click in the plan will place. */
   @state() private placingEntity?: string;
+  @state() private placingKind: FixtureKind = "switch";
   /** What each fixture looks like now, for the badges in the plan. */
   @state() private visuals: ReadonlyMap<string, FixtureVisual> = new Map();
   /** What the door and window tool places. */
@@ -145,7 +146,7 @@ export class DioramaEditor extends LitElement {
     if ((changed.has("hass") || changed.has("floorId")) && this.hass && this.floorId) {
       if (this.loadedId !== this.floorId) void this.load(this.floorId);
     }
-    if (this.fixtureStates.update(this.hass, this.floor?.fixtures ?? [])) {
+    if (this.fixtureStates.update(this.hass, this.floor ? allFixtures(this.floor) : [])) {
       this.visuals = this.fixtureStates.visuals;
     }
     const traceId = this.floor?.trace?.image;
@@ -536,6 +537,7 @@ export class DioramaEditor extends LitElement {
             .placing=${this.placing}
             .visuals=${this.visuals}
             .placingEntity=${this.placingEntity}
+            .placingKind=${this.placingKind}
             .openingType=${this.openingType}
             .traceImage=${this.traceImage}
             ?calibrating=${this.calibrating}
@@ -754,8 +756,10 @@ export class DioramaEditor extends LitElement {
           .hass=${this.hass}
           .floor=${this.floor}
           .picked=${this.placingEntity}
-          @device-pick=${(event: CustomEvent<{ entityId?: string }>) =>
-            (this.placingEntity = event.detail.entityId)}
+          @device-pick=${(event: CustomEvent<{ entityId?: string; kind?: FixtureKind }>) => {
+            this.placingEntity = event.detail.entityId;
+            if (event.detail.kind) this.placingKind = event.detail.kind;
+          }}
           @device-close=${() => this.setTool("select")}
         ></diorama-device-drawer>
       </div>`;

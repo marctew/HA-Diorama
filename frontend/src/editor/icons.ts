@@ -1,4 +1,5 @@
 import { html, svg, type TemplateResult } from "lit";
+import type { FixtureKind } from "../core/scene";
 
 const PATHS = {
   select: svg`<path d="M6 3.5 18.5 11l-5.4 1.6L11 18.5z" fill="currentColor" stroke-linejoin="round" />`,
@@ -29,6 +30,33 @@ const PATHS = {
 };
 
 export type IconName = keyof typeof PATHS;
+
+/** A glyph for each kind of fixture, drawn about the origin to fit a badge
+ * of radius 10. Stroke it; do not fill. */
+export const KIND_GLYPHS: Readonly<Record<FixtureKind, TemplateResult>> = {
+  light: svg`<path d="M-3 1.5a4.2 4.2 0 1 1 6 0v1.7h-6zM-2 5.4h4" />`,
+  switch: svg`<path d="M0 -5v4.5M-3.3 -2.9a4.6 4.6 0 1 0 6.6 0" />`,
+  cover: svg`<path d="M-5 -4.6h10M-3.8 -4.6v9.2h7.6v-9.2M-3.8 -1.6h7.6M-3.8 1.4h7.6" />`,
+  opening: svg`<path d="M-5 5h10M-3.2 5v-9.6h6.4V5M0.9 0.4h0.1" />`,
+  climate: svg`<path d="M-1.3 0.9v-4.6a1.3 1.3 0 0 1 2.6 0v4.6a2.7 2.7 0 1 1-2.6 0zM0 3.2v-3" />`,
+  presence: svg`<path d="M1.8 -3.4a1.8 1.8 0 1 1-3.6 0a1.8 1.8 0 1 1 3.6 0M-3.8 5.2c0-2.8 1.7-4.4 3.8-4.4s3.8 1.6 3.8 4.4" />`,
+  media: svg`<path d="M-2.4 -4.2v8.4l6.2-4.2z" />`,
+  lock: svg`<path d="M-3.6 -0.6h7.2v5.4h-7.2zM-2.1 -0.6v-1.7a2.1 2.1 0 0 1 4.2 0v1.7" />`,
+  label: svg`<path d="M-4.4 3.4a5 5 0 1 1 8.8 0M0 1.2l2.3-3.3" />`,
+};
+
+/** What each kind of fixture is called in lists. */
+export const KIND_NAMES: Readonly<Record<FixtureKind, string>> = {
+  light: "Light",
+  switch: "Switch",
+  cover: "Blind or cover",
+  opening: "Door or window",
+  climate: "Temperature",
+  presence: "Presence",
+  media: "Media player",
+  lock: "Lock",
+  label: "Sensor",
+};
 
 export function icon(name: IconName): TemplateResult {
   return html`<svg

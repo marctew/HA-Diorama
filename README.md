@@ -2,7 +2,7 @@
 
 Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
 
-> **Early days.** You can draw the walls and rooms of a floor from above, furnish them from a catalogue of 33 pieces, see it all in 3D beside the plan as you work, link rooms to Home Assistant areas, and place your lights and switches: they glow when on, and a tap in the 3D view switches them. A dashboard card shows the whole house, a floor or a room, live. You can have several floors, doors and windows, and trace over a plan image. This is an alpha: lights and switches are the only devices so far. [SPEC.md](SPEC.md) has the design and the build order.
+> **Early days.** You can draw the walls and rooms of a floor from above, furnish them from a catalogue of 33 pieces, see it all in 3D beside the plan as you work, link rooms to Home Assistant areas, and place your devices: lights glow when on, blinds go up and down, doors with a sensor swing open, rooms take the colour of their temperature, and a tap in the 3D view works whatever it lands on (a garage door asks first; a lock never moves on a tap). A dashboard card shows the whole house, a floor or a room, live. You can have several floors, doors and windows, and trace over a plan image. The card follows the sun, so the house is dark at night. This is an alpha. [SPEC.md](SPEC.md) has the design and the build order.
 
 ## Install
 
@@ -16,7 +16,7 @@ There are no releases yet, and the Marketplace installs Diorama from the zip att
 
 ## Use
 
-- **Diorama** in the sidebar (administrators only) is where the house is drawn. Press `W` to draw walls: click each corner, close the loop to make a room, type a length and press Enter for an exact wall. `F` opens the furniture list: pick a piece and click to place it, `R` turns it. `B` lists your lights and switches: pick one and click where it is, or on a lamp to make it that lamp. `O` adds doors and windows. `V` selects and moves. With nothing selected, the panel on the right takes a plan image to trace over. The Floors button adds and arranges floors, and Views on the 3D side saves camera angles for cards to use. Drawing needs a desktop-sized screen.
+- **Diorama** in the sidebar (administrators only) is where the house is drawn. Press `W` to draw walls: click each corner, close the loop to make a room, type a length and press Enter for an exact wall. `F` opens the furniture list: pick a piece and click to place it, `R` turns it. `B` lists your devices: pick one and click where it is, or on furniture that suits it (a lamp for a light, the TV for a media player) to make it that. A door or window takes its sensor or blind when you select it. `O` adds doors and windows. `V` selects and moves. With nothing selected, the panel on the right takes a plan image to trace over. The Floors button adds and arranges floors, and Views on the 3D side saves camera angles for cards to use. Drawing needs a desktop-sized screen.
 - On a dashboard, add the **Diorama** card and choose what it shows in its settings, or in YAML:
 
 ```yaml
@@ -29,10 +29,11 @@ walls: auto           # auto lowers the walls in the way; full | low
 interactive: true     # false: taps do nothing
 controls: true        # false: the view cannot be turned or zoomed
 floor_gap: 2.5        # house view: space the floors apart (metres)
+day_night: true       # false: always daytime
 camera: c_ab12cd34    # a saved view, easiest picked in the card's settings
 ```
 
-Tap a light or switch to work it; press and hold for its details. Any number of cards can share a dashboard.
+Tap a light, switch or blind to work it; press and hold anything for its details. Any number of cards can share a dashboard.
 
 ## Develop
 

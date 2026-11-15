@@ -196,9 +196,14 @@ Still to come
 
 Still to come
 
-- Doors and windows are cut out of both faces of their wall, with the sides of the hole filled in; a window gets a see-through pane. A door is an open doorway for now (stage 9 binds it to a sensor).
+- Doors and windows are cut out of both faces of their wall, with the sides of the hole filled in; a window gets a see-through pane. A door with no sensor is an open doorway.
 - Ghosted neighbours in the room view, smooth camera transitions, double-tap a room to focus it. In the house view an upper floor still hides most of the one below; spacing the floors apart helps, but hiding upper floors on demand would be better.
-- Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
+
+Day and night (stage 9)
+
+- `core/sun.ts` turns the elevation and azimuth of `sun.sun` into lighting: where the light comes from, how strong the sun and the sky are, their colour, and whether shadows are worth drawing. Full day above 10 degrees of elevation, full night below -6, warm in between, bluish and never black at night. The light is never drawn from lower than 14 degrees. The top of the plan is taken to be north; there is no setting for which way the house faces yet.
+- A view follows the sun only when asked (`day-night` on `diorama-scene-view`): the card does by default, the editor's preview is always a fixed afternoon. At night the view's background darkens with it, and lights that are on show up more.
+- The sun moves every few minutes; the view relights only when its elevation or azimuth has changed.
 
 ## 8. Entity bindings
 
@@ -207,20 +212,23 @@ A binding is a small module per kind: which entities it accepts, how state maps 
 | Kind | Entities | Visual | Tap |
 |---|---|---|---|
 | light | `light.*` | glow, colour, brightness | toggle |
-| switch | `switch.*`, `input_boolean.*`, `fan.*` | on/off tint; fan spins | toggle |
-| cover | `cover.*` | blind or curtain position, garage door | toggle, confirm for garage |
-| opening | `binary_sensor` door/window | door swings, window opens | more-info |
-| climate | `climate.*`, temperature `sensor` | room floor tint by temperature, label | more-info |
-| presence | occupancy/motion `binary_sensor` | room outline pulse | more-info |
-| media | `media_player.*` | screen glow when playing | more-info |
-| lock | `lock.*` | padlock icon state | more-info only, never toggles on tap |
-| label | any `sensor` | floating value chip | more-info |
+| switch | `switch.*`, `input_boolean.*`, `fan.*` | on/off colour | toggle |
+| cover | `cover.*` | on a door or window: a blind as far down as the cover is shut. Elsewhere a marker | toggle; garage doors, gates and doors ask first |
+| opening | `binary_sensor` of class door, window, garage_door, opening | on a door: the leaf swings open. Green shut, amber open | more-info |
+| climate | `climate.*`, temperature `sensor` | the temperature beside it, and the floor of its room tinted from blue (cold) to red (hot) | more-info |
+| presence | `binary_sensor` of class occupancy, motion, presence | the floor of its room tinted while someone is there | more-info |
+| media | `media_player.*` | glows while playing | more-info |
+| lock | `lock.*` | green locked, amber anything else | more-info only, never toggles on tap |
+| label | any other `sensor` or `binary_sensor` | its reading beside it | more-info |
 
-- `light` and `switch` are built (`core/bindings.ts`); the rest follow in the order above (section 12). A fixture of a kind with no binding yet is drawn greyed and only ever opens its details.
-- Tap does the kind's action unless the fixture says otherwise (`options.tap`: `toggle`, `more-info` or `none`). Press and hold opens the details, by firing Home Assistant's `hass-more-info` event. Full `tap_action`/`hold_action` configuration is not built.
+- All of these are built (`core/bindings.ts`): one binding per kind, which says what the entity looks like (`FixtureVisual`: on, level, colour, glow, and optionally a label, a room tint and how far open) and what a tap does. The renderer and the plan only see the visual, so a new kind does not touch them. Not built from the first draft of this table: a fan that spins, a window that opens, a pulsing outline for presence.
+- Which kind an entity becomes goes by its domain and, for sensors, its device class (`kindForEntity`). Entities that are hidden, or that are a device's diagnostics or settings (`entity_category`), are not offered.
+- A door or window takes an entity of its own (`opening.entity_id`, chosen in the inspector): a sensor or a cover. It is shown and tapped like a fixture, through a fixture made up on the fly (`openingFixtures`, id `opening:<id>`) that is never stored. A blind or a door's leaf hangs off its wall's mesh, so it is lowered with the wall.
+- Tap does the kind's action unless the fixture says otherwise (`options.tap`: `toggle`, `confirm`, `more-info` or `none`; only the ones the kind allows, `tapChoices`). `confirm` shows a strip in the view asking "Open Garage door?" and toggles on yes; it goes away by itself after eight seconds. A lock's tap can only be `more-info` or `none`, whatever is stored. Press and hold opens the details, by firing Home Assistant's `hass-more-info` event. Full `tap_action`/`hold_action` configuration is not built.
+- A reading is drawn at a real size in the model but never smaller than 22 pixels on screen, so that it can be read in a small card.
 - Hit targets are at least 44 px on screen regardless of model size.
 - `unavailable` and `unknown` render greyed, and a tap opens the details instead of toggling; a fixture whose entity no longer exists is shown the same way and flagged in the inspector.
-- State updates are optimistic: a toggle shows at once, is dropped as soon as Home Assistant's state agrees, and reverts if the call fails or nothing confirms it within three seconds.
+- State updates are optimistic: a toggle shows at once, is dropped as soon as Home Assistant's state agrees, and reverts if the call fails or nothing confirms it within three seconds. A cover is shown open or closed, whichever it is heading for; one that takes longer than three seconds to get there shows its real position from then on.
 - `hass` is replaced on every state change in the house. Fixture visuals are recomputed only when the state object of an entity on the floor has changed (`shared/fixture-state.ts`), so unrelated changes cost nothing and draw nothing.
 
 ## 9. Dashboard card
@@ -236,15 +244,16 @@ walls: auto           # auto | full | low
 aspect_ratio: "16:9"
 camera: c_ab12cd34    # the id of a saved view; the editor offers them by name
 floor_gap: 2.5        # house view: metres of extra space between floors
-day_night: true       # accepted, not used yet (stage 9)
+day_night: true       # light the house as the sun is now; false = always daytime
 ```
 
 Built (stage 7)
 
 - The element on the dashboard (`entries/card.ts`) is a stub of a few kilobytes that is on every Home Assistant page. It loads the card proper the first time one is shown, and that loads three.js only once there is a house to draw.
 - The card loads the house, the floors its view needs and no others (`shared/scene-controller.ts`), and the catalogue. A room card that names its floor fetches one floor. It subscribes to saves and reloads what changed, so an edit in the panel shows on every dashboard without a reload.
-- Lights and switches are live and work as in the editor's preview: tap toggles, hold opens the details. `interactive: false` makes it display only.
-- Visual config editor (`card/card-editor.ts`), returned from `getConfigElement`: what to show, floor, room, shape, walls, and the two toggles. It stores only what differs from the defaults. `getStubConfig` returns the whole house. Registered in `window.customCards` with a preview.
+- Devices are live and work as in the editor's preview: tap does what the fixture's kind does (section 8), hold opens the details. `interactive: false` makes it display only.
+- `day_night` (on by default) lights the house as the sun is (section 7); the card's background darkens at night.
+- Visual config editor (`card/card-editor.ts`), returned from `getConfigElement`: what to show, floor, room, shape, walls, and the three toggles. It stores only what differs from the defaults. `getStubConfig` returns the whole house. Registered in `window.customCards` with a preview.
 - Sizes itself by `aspect_ratio`: `rows: "auto"` in the sections view (`getGridOptions`), a matching `getCardSize` for masonry.
 - `camera` looks from a saved view, lifted to wherever its floor is shown; without one, or if the view has been deleted, the house is framed. `floor_gap` spaces the floors of the house view apart.
 - Empty states: no house drawn yet (with a link to the panel for admins), the room or floor is no longer there, the 3D view could not be loaded or WebGL is unavailable.
@@ -252,7 +261,7 @@ Built (stage 7)
 
 Not done
 
-- Day and night (`day_night`), the user's reduced-motion setting.
+- The user's reduced-motion setting.
 - The card reads `hass` rather than subscribing to the `states` context. It costs almost nothing, because fixture states are only recomputed when an entity on the floor has changed (section 8).
 
 ## 10. Furniture catalogue
@@ -299,7 +308,7 @@ Each stage ends with something that runs and with its tests.
 9. More bindings in the order of the table in section 8; day and night.
 10. Release: README with screenshots, CREDITS, model upload, translations structure, Marketplace submission.
 
-Stages 1 to 7 are the first public alpha.
+Stages 1 to 7 are the first public alpha. Stages 1 to 9 are built.
 
 ## 13. Decisions already made
 
@@ -343,6 +352,13 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - Keyboard handling skips keys typed into fields, which at first included Ctrl+S: with a slider focused, saving did nothing. Ctrl+S is handled before that check.
 - Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
+
+Learned while building stage 9:
+
+- `hass.entities` also carries `entity_category` (`diagnostic` or `config`), which is how a device's signal strength and firmware sensors are kept out of the device list. Seen in Home Assistant 2026.10.4; the `sun` integration's own sensors are an example.
+- `sun.sun` has `elevation` and `azimuth` attributes (degrees, azimuth clockwise from north), and is there on a default installation.
+- A template cover goes straight from `closed` to `open`; a real one reports `opening` for a while. The optimistic state covers both: it waits for the state it expects and gives up after three seconds.
+- Home Assistant's own frontend logs an unhandled `unknown_command` rejection on every page of the bare test instance. It is not Diorama's.
 
 Still open:
 

@@ -153,6 +153,62 @@ describe("FixtureStates", () => {
     expect(events).toEqual([]);
   });
 
+  it("opens a blind on a tap and shows it open before Home Assistant confirms", () => {
+    const states = new FixtureStates(() => {});
+    const blind = fixture({ entity_id: "cover.blind", kind: "cover" });
+    const { hass, callService } = fakeHass({ "cover.blind": "closed" });
+    hass.states["cover.blind"].attributes = { current_position: 0, device_class: "blind" };
+    states.update(hass, [blind]);
+    expect(states.visuals.get("x1")).toMatchObject({ on: false, open: 0 });
+
+    expect(states.tap(fakeHost().host, hass, blind)).toBeUndefined();
+
+    expect(callService).toHaveBeenCalledWith("cover", "toggle", {}, { entity_id: "cover.blind" });
+    states.update(hass, [blind]);
+    // Not held back by the position it had when shut.
+    expect(states.visuals.get("x1")).toMatchObject({ on: true, open: 1 });
+
+    const { hass: opened } = fakeHass({ "cover.blind": "open" });
+    opened.states["cover.blind"].attributes = { current_position: 60 };
+    states.update(opened, [blind]);
+    expect(states.visuals.get("x1")).toMatchObject({ open: 0.6 });
+  });
+
+  it("asks before moving a garage door, and moves it once told to", () => {
+    const states = new FixtureStates(() => {});
+    const garage = fixture({ entity_id: "cover.garage", kind: "cover" });
+    const { hass, callService } = fakeHass({ "cover.garage": "closed" });
+    hass.states["cover.garage"].attributes = { device_class: "garage" };
+    const { host, events } = fakeHost();
+
+    expect(states.tap(host, hass, garage)).toBe("confirm");
+    expect(callService).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+
+    states.toggle(hass, garage);
+    expect(callService).toHaveBeenCalledWith("cover", "toggle", {}, { entity_id: "cover.garage" });
+  });
+
+  it("does not ask about something that is not there to move", () => {
+    const states = new FixtureStates(() => {});
+    const garage = fixture({ entity_id: "cover.garage", kind: "cover", options: { tap: "confirm" } });
+    const { hass, callService } = fakeHass({ "cover.garage": "unavailable" });
+    const { host, events } = fakeHost();
+    expect(states.tap(host, hass, garage)).toBeUndefined();
+    expect(callService).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: "hass-more-info", detail: { entityId: "cover.garage" } }]);
+  });
+
+  it("never unlocks a door on a tap", () => {
+    const states = new FixtureStates(() => {});
+    const lock = fixture({ entity_id: "lock.front", kind: "lock", options: { tap: "toggle" } });
+    const { hass, callService } = fakeHass({ "lock.front": "locked" });
+    const { host, events } = fakeHost();
+    expect(states.tap(host, hass, lock)).toBeUndefined();
+    expect(callService).not.toHaveBeenCalled();
+    expect(events).toEqual([{ type: "hass-more-info", detail: { entityId: "lock.front" } }]);
+  });
+
   it("forgets pending toggles when disposed", () => {
     const changed = vi.fn();
     const states = new FixtureStates(changed);

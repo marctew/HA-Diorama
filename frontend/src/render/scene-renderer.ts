@@ -29,6 +29,7 @@ import { findModel, modelUrl, type Catalogue } from "../core/catalogue";
 import { LOW_WALL, wallsToLower, type WallMode } from "../core/cutaway";
 import { buildFloorMesh, type Colour, type MeshData } from "../core/mesh";
 import { QUALITY } from "../core/quality";
+import { DAYLIGHT, type SunLighting } from "../core/sun";
 import type { Fixture, Floor, Item } from "../core/scene";
 import { FixtureLayer } from "./fixture-layer";
 import { loadedModel, loadModel } from "./models";
@@ -80,6 +81,10 @@ export class SceneRenderer {
   private readonly controls: OrbitControls;
   private readonly house = new Group();
   private readonly sun = new DirectionalLight(0xfff4e0, 1.6);
+  private readonly sky = new HemisphereLight(0xffffff, 0xb8b0a4, 1.5);
+  private readonly fill = new AmbientLight(0xffffff, 0.3);
+  private lighting: SunLighting = DAYLIGHT;
+  private readonly shadows: boolean;
   private readonly ground: Mesh;
   private readonly wallMaterial = new MeshLambertMaterial({ vertexColors: true });
   private readonly slabMaterial = new MeshLambertMaterial({ vertexColors: true });
@@ -127,8 +132,8 @@ export class SceneRenderer {
 
     // Balanced so that a floor in full sun shows its own colour, neither
     // darker nor washed out, and one in shadow is a little over half as bright.
-    this.scene.add(new HemisphereLight(0xffffff, 0xb8b0a4, 1.5));
-    this.scene.add(new AmbientLight(0xffffff, 0.3));
+    this.scene.add(this.sky, this.fill);
+    this.shadows = settings.shadows;
     this.sun.castShadow = settings.shadows;
     if (settings.shadows) {
       this.sun.shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
@@ -187,6 +192,23 @@ export class SceneRenderer {
     this.requestRender();
   }
 
+  /** Light the house as the sun now is; DAYLIGHT for a fixed afternoon. */
+  setLighting(lighting: SunLighting): void {
+    this.lighting = lighting;
+    const [r, g, b] = lighting.colour;
+    this.sun.color.setRGB(r, g, b, SRGBColorSpace);
+    this.sun.intensity = 1.6 * lighting.sun;
+    // The sky takes on some of the colour of the hour.
+    this.sky.color.setRGB((1 + r) / 2, (1 + g) / 2, (1 + b) / 2, SRGBColorSpace);
+    this.sky.intensity = 1.5 * lighting.sky;
+    this.fill.intensity = 0.3 * lighting.sky;
+    this.sun.castShadow = this.shadows && lighting.shadows;
+    this.ground.visible = this.sun.castShadow;
+    this.fixtures.setNight(nightOf(lighting));
+    this.placeLights();
+    this.requestRender();
+  }
+
   /** Whether dragging and scrolling move the camera. */
   setControlsEnabled(enabled: boolean): void {
     this.controls.enabled = enabled;
@@ -204,6 +226,7 @@ export class SceneRenderer {
   setContent(content: SceneContent): void {
     this.generation++;
     this.clearHouse();
+    const wallMeshes = new Map<string, Mesh>();
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
     for (const { floor, elevation } of content.floors) {
@@ -220,6 +243,7 @@ export class SceneRenderer {
         const wall = this.addMesh(part.data, this.wallMaterial, elevation, true);
         if (!wall) continue;
         this.walls.push({ id: part.id, mesh: wall, centre: part.centre, height: part.height });
+        wallMeshes.set(`${floor.id}/${part.id}`, wall);
         if (part.glass) {
           // A child of its wall, so that it is lowered with it.
           const pane = this.buildMesh(part.glass, this.glassMaterial);
@@ -246,7 +270,9 @@ export class SceneRenderer {
         max.max(new Vector3(mesh.bounds.max[0], mesh.bounds.max[1] + elevation, mesh.bounds.max[2]));
       }
     }
-    this.fixtures.setFloors(content.floors, content.catalogue);
+    this.fixtures.setFloors(content.floors, content.catalogue, (floorId, wallId) =>
+      wallMeshes.get(`${floorId}/${wallId}`),
+    );
 
     const empty = !Number.isFinite(min.x);
     if (empty) {
@@ -490,7 +516,8 @@ export class SceneRenderer {
   private placeLights(): void {
     const reach = this.radius * 1.6;
     this.sun.target.position.copy(this.centre);
-    this.sun.position.copy(this.centre).add(new Vector3(-0.6, 1.4, 0.45).multiplyScalar(reach));
+    const [x, y, z] = this.lighting.direction;
+    this.sun.position.copy(this.centre).add(new Vector3(x, y, z).multiplyScalar(reach * 1.6));
     const shadow = this.sun.shadow.camera;
     shadow.left = -reach;
     shadow.right = reach;
@@ -582,8 +609,14 @@ export class SceneRenderer {
       // glide ends, so do the frames.
       this.controls.update();
       this.applyCutaway();
+      this.fixtures.beforeDraw(this.camera, this.canvas.clientHeight);
       this.gl.draw(this.scene, this.camera, this.surface);
       this.frames++;
     });
   };
+}
+
+/** How dark a lighting is: 0 in full daylight, 1 in the middle of the night. */
+export function nightOf(lighting: SunLighting): number {
+  return Math.min(1, Math.max(0, (1 - lighting.sky) / 0.78));
 }

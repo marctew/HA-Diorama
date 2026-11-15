@@ -2,7 +2,14 @@ import { css, html, LitElement, nothing, svg, type PropertyValues, type Template
 import { customElement, property, state } from "lit/decorators.js";
 import { MISSING, type FixtureVisual } from "../core/bindings";
 import { EMPTY_CATALOGUE, findModel, type Catalogue, type CatalogueModel } from "../core/catalogue";
-import { itemToBind, moveFixtures, placeFixture } from "../core/fixtures";
+import {
+  itemToBind,
+  moveFixtures,
+  openingFixtures,
+  placeFixture,
+} from "../core/fixtures";
+import { kindForEntity } from "../core/bindings";
+import { KIND_GLYPHS } from "./icons";
 import {
   distance,
   interiorPoint,
@@ -29,7 +36,7 @@ import {
 } from "../core/openings";
 import { addWall, commit, moveVertices } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Fixture, Floor, Item, Opening } from "../core/scene";
+import type { Fixture, FixtureKind, Floor, Item, Opening } from "../core/scene";
 import { snap, type SnapResult } from "../core/snap";
 import { formatArea, formatLength, parseLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
@@ -91,6 +98,8 @@ export class DioramaPlanView extends LitElement {
   @property({ attribute: false }) visuals: ReadonlyMap<string, FixtureVisual> = new Map();
   /** The entity that a click will place, with the device tool. */
   @property() placingEntity?: string;
+  /** What kind of fixture the entity being placed becomes. */
+  @property() placingKind: FixtureKind = "switch";
   /** What the door and window tool places. */
   @property() openingType: OpeningType = "door";
   /** A plan image to show under the drawing, and its size in pixels. */
@@ -527,13 +536,19 @@ export class DioramaPlanView extends LitElement {
   /** Each fixture as a round badge: filled with its colour when on. */
   private renderFixtures(floor: Floor): TemplateResult[] {
     const selected = new Set(this.selection.fixtures);
-    return floor.fixtures.map((fixture) =>
-      this.renderBadge(
-        fixture,
-        this.visuals.get(fixture.id) ?? MISSING,
-        selected.has(fixture.id) ? "selected" : "",
+    return [
+      ...floor.fixtures.map((fixture) =>
+        this.renderBadge(
+          fixture,
+          this.visuals.get(fixture.id) ?? MISSING,
+          selected.has(fixture.id) ? "selected" : "",
+        ),
       ),
-    );
+      // The entity of a door or window: shown on it, selected through it.
+      ...openingFixtures(floor, kindForEntity).map((fixture) =>
+        this.renderBadge(fixture, this.visuals.get(fixture.id) ?? MISSING, "small"),
+      ),
+    ];
   }
 
   private renderBadge(
@@ -544,14 +559,22 @@ export class DioramaPlanView extends LitElement {
     const at = toScreen(this.view, fixture);
     const [r, g, b] = visual.colour.map((channel) => Math.round(channel * 255));
     const state = !visual.available ? "missing" : visual.on ? "on" : "off";
-    const glyph =
-      fixture.kind === "light"
-        ? svg`<path d="M-3 1.5a4.2 4.2 0 1 1 6 0v1.7h-6zM-2 5.4h4" />`
-        : svg`<path d="M0 -5v4.5M-3.3 -2.9a4.6 4.6 0 1 0 6.6 0" />`;
+    const small = classes.includes("small");
+    // A reading is ringed with its colour whether or not it is "on".
+    const ring = visual.available && visual.label ? `stroke: rgb(${r} ${g} ${b})` : "";
     return svg`
-      <g class="badge ${state} ${classes}" transform="translate(${at.x} ${at.y})">
-        <circle r=${BADGE_RADIUS} style=${state === "on" ? `fill: rgb(${r} ${g} ${b})` : ""} />
-        ${glyph}
+      <g
+        class="badge ${state} ${classes}"
+        transform="translate(${at.x} ${at.y}) ${small ? "scale(0.72)" : ""}"
+      >
+        <circle
+          r=${BADGE_RADIUS}
+          style=${state === "on" ? `fill: rgb(${r} ${g} ${b})` : ring}
+        />
+        ${KIND_GLYPHS[fixture.kind] ?? KIND_GLYPHS.label}
+        ${visual.available && visual.label && !small
+          ? svg`<text class="reading" y=${BADGE_RADIUS + 12}>${visual.label}</text>`
+          : nothing}
       </g>
     `;
   }
@@ -560,7 +583,7 @@ export class DioramaPlanView extends LitElement {
     const ghost = this.deviceGhost;
     const floor = this.floor;
     if (!ghost || !floor || !this.placingEntity || this.readonly) return nothing;
-    const kind = this.placingEntity.startsWith("light.") ? "light" : "switch";
+    const kind = this.placingKind;
     const onto = ghost.item
       ? this.renderFootprint(ghost.item, findModel(this.catalogue, ghost.item.model), "item target")
       : nothing;
@@ -1057,8 +1080,7 @@ export class DioramaPlanView extends LitElement {
     const floor = this.floor;
     if (!floor || !this.placingEntity) return;
     const world = toWorld(this.view, screen);
-    const kind = this.placingEntity.startsWith("light.") ? "light" : "switch";
-    const item = itemToBind(floor, this.catalogue, kind, world);
+    const item = itemToBind(floor, this.catalogue, this.placingKind, world);
     const point = event.altKey ? world : { x: roundTo(world.x, GRID), y: roundTo(world.y, GRID) };
     this.deviceGhost = { point, item };
   }
@@ -1069,8 +1091,7 @@ export class DioramaPlanView extends LitElement {
     if (!floor || !ghost || !this.placingEntity) return;
     // Aim at the lamp itself when joining one, so placeFixture finds it.
     const at = ghost.item ? { x: ghost.item.x, y: ghost.item.y } : ghost.point;
-    const placed = placeFixture(floor, this.catalogue, this.placingEntity, at);
-    if (!placed.id) return;
+    const placed = placeFixture(floor, this.catalogue, this.placingEntity, this.placingKind, at);
     this.deviceGhost = undefined;
     this.dispatchEvent(
       new CustomEvent("plan-edit", { detail: { floor: placed.floor, placedFixture: placed.id } }),
@@ -1316,6 +1337,20 @@ export class DioramaPlanView extends LitElement {
       }
       .badge.on path {
         stroke: rgba(0, 0, 0, 0.72);
+      }
+      .badge.small {
+        pointer-events: none;
+      }
+      .badge .reading {
+        fill: var(--diorama-text);
+        font-size: 11px;
+        font-weight: 600;
+        text-anchor: middle;
+        paint-order: stroke;
+        stroke: var(--halo);
+        stroke-width: 3px;
+        stroke-linejoin: round;
+        pointer-events: none;
       }
       .badge.missing circle {
         fill: var(--halo);

@@ -94,6 +94,7 @@ export class DioramaCardView extends LitElement {
       .walls=${config.walls}
       .interactive=${config.interactive}
       .controls=${config.controls}
+      ?day-night=${config.day_night}
       no-reset
       aria-label=${view.title}
     ></diorama-scene-view>`;
@@ -141,7 +142,8 @@ export class DioramaCardView extends LitElement {
       diorama-scene-view {
         position: absolute;
         inset: 0;
-        background: none;
+        /* The card shows through by day; the view sets how far into the night it is. */
+        background: color-mix(in srgb, #0d1524 var(--diorama-night, 0%), transparent);
       }
       .loading {
         margin: 0;

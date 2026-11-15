@@ -1,11 +1,11 @@
-import { css, html, LitElement, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, svg, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { fixtureVisual } from "../core/bindings";
 import { bindableEntities, type EntityChoice } from "../core/fixtures";
 import type { Floor } from "../core/scene";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
-import { icon } from "./icons";
+import { icon, KIND_GLYPHS, KIND_NAMES } from "./icons";
 
 /** The devices that can go on the floor: first those in the areas its rooms
  * are linked to, room by room, then the rest. Pick one, then click in the
@@ -63,10 +63,7 @@ export class DioramaDeviceDrawer extends LitElement {
       />
       <div class="list">
         ${all.length === 0
-          ? html`<p class="empty">
-              No lights or switches were found in Home Assistant. Other kinds of device are not
-              supported yet.
-            </p>`
+          ? html`<p class="empty">Nothing that can be placed was found in Home Assistant.</p>`
           : nothing}
         ${sections.map((section) => this.renderSection(section.title, section.choices, searching))}
         ${linked.size === 0 && all.length > 0 && !searching
@@ -88,9 +85,9 @@ export class DioramaDeviceDrawer extends LitElement {
       </div>
       <p class="help">
         ${this.picked
-          ? html`Click in the plan to place it. On a lamp, it becomes that lamp. <kbd>Esc</kbd>
-              stops.`
-          : "Pick a device, then click where it is in the plan."}
+          ? html`Click in the plan to place it. On furniture that suits it (a lamp for a light,
+              the TV for a media player) it becomes that. <kbd>Esc</kbd> stops.`
+          : "Pick a device, then click where it is in the plan. A door or window takes its sensor or blind when you select it."}
       </p>
     `;
   }
@@ -109,7 +106,7 @@ export class DioramaDeviceDrawer extends LitElement {
     return html`
       <h3>${title}</h3>
       ${choices.length === 0
-        ? html`<p class="note">No lights or switches in this area.</p>`
+        ? html`<p class="note">Nothing to place in this area.</p>`
         : ordered.map((choice) => this.renderRow(choice, placed.has(choice.entity_id)))}
     `;
   }
@@ -121,21 +118,30 @@ export class DioramaDeviceDrawer extends LitElement {
     return html`
       <button
         class="row ${picked ? "picked" : ""}"
-        title=${choice.entity_id}
+        title="${KIND_NAMES[choice.kind]}: ${choice.entity_id}"
         ?disabled=${placed}
         aria-pressed=${picked}
         @click=${() =>
           this.dispatchEvent(
             new CustomEvent("device-pick", {
-              detail: { entityId: picked ? undefined : choice.entity_id },
+              detail: { entityId: picked ? undefined : choice.entity_id, kind: choice.kind },
             }),
           )}
       >
-        <span
+        <svg
           class="dot ${visual.available ? (visual.on ? "on" : "off") : "missing"}"
-          style=${visual.on ? `background: rgb(${r} ${g} ${b})` : ""}
-        ></span>
+          viewBox="-11 -11 22 22"
+          width="22"
+          height="22"
+          aria-hidden="true"
+        >
+          <circle r="10" style=${visual.on ? `fill: rgb(${r} ${g} ${b})` : ""} />
+          ${svg`${KIND_GLYPHS[choice.kind]}`}
+        </svg>
         <span class="name">${choice.name}</span>
+        ${visual.available && visual.label
+          ? html`<span class="reading">${visual.label}</span>`
+          : nothing}
         ${placed ? html`<span class="placed">${icon("check")}</span>` : nothing}
       </button>
     `;
@@ -240,18 +246,33 @@ export class DioramaDeviceDrawer extends LitElement {
       }
       .dot {
         flex: none;
-        box-sizing: border-box;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: color-mix(in srgb, var(--diorama-text) 35%, transparent);
       }
-      .dot.on {
-        box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+      .dot circle {
+        fill: color-mix(in srgb, var(--diorama-text) 40%, var(--card-background-color, #fff));
       }
-      .dot.missing {
-        background: none;
-        border: 1.5px dashed color-mix(in srgb, var(--diorama-text) 45%, transparent);
+      .dot path {
+        fill: none;
+        stroke: #fff;
+        stroke-width: 1.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .dot.on path {
+        stroke: rgba(0, 0, 0, 0.72);
+      }
+      .dot.missing circle {
+        fill: none;
+        stroke: color-mix(in srgb, var(--diorama-text) 45%, transparent);
+        stroke-width: 1.5;
+        stroke-dasharray: 3 2.5;
+      }
+      .dot.missing path {
+        stroke: color-mix(in srgb, var(--diorama-text) 55%, transparent);
+      }
+      .reading {
+        flex: none;
+        color: var(--diorama-text-muted);
+        font-variant-numeric: tabular-nums;
       }
       .name {
         flex: 1;

@@ -3,11 +3,17 @@ import { customElement, property, state } from "lit/decorators.js";
 import type { Catalogue } from "../core/catalogue";
 import { hexColour, type Colour } from "../core/mesh";
 import type { WallMode } from "../core/cutaway";
+import { toggleVerb } from "../core/bindings";
+import { allFixtures } from "../core/fixtures";
 import type { Fixture } from "../core/scene";
+import { DAYLIGHT, lightingFromSun } from "../core/sun";
 import { FixtureStates, moreInfo } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
-import { SceneRenderer, type SceneFloor } from "./scene-renderer";
+import { nightOf, SceneRenderer, type SceneFloor } from "./scene-renderer";
+
+/** How long a question about a tap waits for an answer. */
+const CONFIRM_MILLISECONDS = 8000;
 
 /** A 3D view of one or more floors. Give it the floors; it does the rest. */
 @customElement("diorama-scene-view")
@@ -34,7 +40,15 @@ export class DioramaSceneView extends LitElement {
   /** Hide the button that frames the house again. */
   @property({ type: Boolean, attribute: "no-reset" }) noReset = false;
 
+  /** Light the house as the sun is now, from `sun.sun`, and darken it at night. */
+  @property({ type: Boolean, attribute: "day-night" }) dayNight = false;
+
   @state() private failed = false;
+  /** A fixture whose tap is waiting to be confirmed. */
+  @state() private asking?: Fixture;
+  private askingTimer?: ReturnType<typeof setTimeout>;
+  /** The sun's elevation and azimuth as last shown. */
+  private sunShown = "";
 
   private renderer?: SceneRenderer;
   private readonly states = new FixtureStates(() => this.showStates());
@@ -65,6 +79,7 @@ export class DioramaSceneView extends LitElement {
     this.intersectionObserver?.disconnect();
     document.removeEventListener("visibilitychange", this.updateVisible);
     this.states.dispose();
+    this.stopAsking();
     this.renderer?.dispose();
     this.renderer?.canvas.remove();
     this.renderer = undefined;
@@ -103,7 +118,42 @@ export class DioramaSceneView extends LitElement {
           : html`<button class="frame" title="Show everything" @click=${this.frame}>
               Reset view
             </button>`}
+      ${this.renderAsking()}
     `;
+  }
+
+  private renderAsking(): TemplateResult | typeof nothing {
+    const fixture = this.asking;
+    const entity = fixture && this.hass?.states[fixture.entity_id];
+    if (!fixture || !entity) return nothing;
+    const friendly = entity.attributes.friendly_name;
+    const name = typeof friendly === "string" && friendly ? friendly : fixture.entity_id;
+    const verb = toggleVerb(fixture.entity_id, entity.state);
+    return html`<div class="ask" role="alertdialog" aria-label="${verb} ${name}?">
+      <span>${verb} <strong>${name}</strong>?</span>
+      <button @click=${this.stopAsking}>Cancel</button>
+      <button
+        class="yes"
+        @click=${() => {
+          if (this.hass) this.states.toggle(this.hass, fixture);
+          this.stopAsking();
+        }}
+      >
+        ${verb}
+      </button>
+    </div>`;
+  }
+
+  private stopAsking = (): void => {
+    clearTimeout(this.askingTimer);
+    this.asking = undefined;
+  };
+
+  private tap(fixture: Fixture): void {
+    this.stopAsking();
+    if (this.states.tap(this, this.hass, fixture) !== "confirm") return;
+    this.asking = fixture;
+    this.askingTimer = setTimeout(this.stopAsking, CONFIRM_MILLISECONDS);
   }
 
   protected override updated(changed: PropertyValues<this>): void {
@@ -119,7 +169,7 @@ export class DioramaSceneView extends LitElement {
       this.renderRoot.querySelector(".canvas")!.append(this.renderer.canvas);
       this.renderer.setCallbacks({
         onTap: (fixture) => {
-          if (this.interactive) this.states.tap(this, this.hass, fixture);
+          if (this.interactive) this.tap(fixture);
         },
         onHold: (fixture) => {
           if (this.interactive) moreInfo(this, fixture.entity_id);
@@ -131,9 +181,11 @@ export class DioramaSceneView extends LitElement {
       this.resize();
       this.show();
       this.showStates();
+      this.showSun();
       if (this.camera) this.renderer.setCamera(this.camera.position, this.camera.target);
       return;
     }
+    if (changed.has("hass") || changed.has("dayNight")) this.showSun();
     if (changed.has("camera")) this.frame();
     if (changed.has("walls")) this.renderer.setWallMode(this.walls);
     if (changed.has("controls")) this.renderer.setControlsEnabled(this.controls);
@@ -155,8 +207,20 @@ export class DioramaSceneView extends LitElement {
   /** Bring the fixtures into line with Home Assistant's states. Cheap when
    * nothing they show has changed, which is nearly always. */
   private showStates(): void {
-    const fixtures: Fixture[] = this.floors.flatMap(({ floor }) => floor.fixtures);
+    const fixtures: Fixture[] = this.floors.flatMap(({ floor }) => allFixtures(floor));
     if (this.states.update(this.hass, fixtures)) this.renderer?.setVisuals(this.states.visuals);
+  }
+
+  /** Light the house as the sun is. The sun moves every few minutes; `hass`
+   * changes many times a second. */
+  private showSun(): void {
+    const sun = this.dayNight ? this.hass?.states["sun.sun"] : undefined;
+    const shown = sun ? `${sun.attributes.elevation},${sun.attributes.azimuth}` : "day";
+    if (shown === this.sunShown) return;
+    this.sunShown = shown;
+    const lighting = lightingFromSun(sun) ?? DAYLIGHT;
+    this.renderer?.setLighting(lighting);
+    this.style.setProperty("--diorama-night", `${Math.round(nightOf(lighting) * 100)}%`);
   }
 
   private resize(): void {
@@ -179,10 +243,61 @@ export class DioramaSceneView extends LitElement {
         position: relative;
         display: block;
         overflow: hidden;
+        --day-top: var(--primary-background-color, #fafafa);
+        --day-bottom: color-mix(in srgb, var(--diorama-text) 7%, var(--day-top));
         background: linear-gradient(
-          var(--primary-background-color, #fafafa),
-          color-mix(in srgb, var(--diorama-text) 7%, var(--primary-background-color, #fafafa))
+          color-mix(in srgb, #0a101c var(--diorama-night, 0%), var(--day-top)),
+          color-mix(in srgb, #162036 var(--diorama-night, 0%), var(--day-bottom))
         );
+      }
+      .ask {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100% - 28px);
+        box-sizing: border-box;
+        padding: 8px 8px 8px 14px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 12px;
+        background: var(--card-background-color, #fff);
+        color: var(--diorama-text);
+        font-size: 14px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.22);
+      }
+      .ask span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ask strong {
+        font-weight: 600;
+      }
+      .ask button {
+        flex: none;
+        height: 34px;
+        padding: 0 12px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 9px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .ask button.yes {
+        border-color: var(--diorama-accent);
+        background: var(--diorama-accent);
+        color: #fff;
+        font-weight: 500;
+      }
+      .ask button:focus-visible {
+        outline: 2px solid var(--diorama-accent);
+        outline-offset: 2px;
       }
       .canvas {
         position: absolute;

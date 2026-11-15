@@ -5,8 +5,14 @@ import { distance, polygonArea, polygonPerimeter } from "../core/geometry";
 import { ROTATE_STEP, updateItems } from "../core/items";
 import { commit, moveVertices, setWallLength, setWallThickness } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import { fixtureVisual, tapAction } from "../core/bindings";
-import { MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
+import {
+  fixtureVisual,
+  tapAction,
+  tapChoices,
+  type FixtureVisual,
+  type TapAction,
+} from "../core/bindings";
+import { bindableEntities, MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
 import { updateOpening } from "../core/openings";
 import type { Fixture, Floor, Item, Opening, Room } from "../core/scene";
 import {
@@ -339,9 +345,41 @@ export class DioramaInspector extends LitElement {
         ${length("From the wall's end", "offset")}
         ${opening.type === "window" ? length("Sill height", "sill") : nothing}
       </div>
+      <label>
+        <span>Sensor or blind</span>
+        <select
+          @change=${(event: Event) => change({ entity_id: value(event) === "" ? null : value(event) })}
+        >
+          <option value="" ?selected=${!opening.entity_id}>None</option>
+          ${this.openingEntities(opening).map(
+            (choice) =>
+              html`<option value=${choice.entity_id} ?selected=${choice.entity_id === opening.entity_id}>
+                ${choice.name}
+              </option>`,
+          )}
+        </select>
+      </label>
+      <p class="help">
+        A door or window sensor shows it open or shut. A blind, shutter or garage door shows how far
+        down it is, and a tap works it.
+      </p>
       <p class="help">Drag it along the wall, or onto another wall.</p>
       ${this.renderDelete(opening.type === "door" ? "Delete door" : "Delete window")}
     `;
+  }
+
+  /** What a door or window can be tied to: sensors that say open or shut,
+   * and covers. The one it has stays listed even if it has gone. */
+  private openingEntities(opening: Opening): { entity_id: string; name: string }[] {
+    const choices: { entity_id: string; name: string }[] = this.hass
+      ? bindableEntities(this.hass).filter(
+          (choice) => choice.kind === "opening" || choice.kind === "cover",
+        )
+      : [];
+    if (opening.entity_id && !choices.some((choice) => choice.entity_id === opening.entity_id)) {
+      choices.unshift({ entity_id: opening.entity_id, name: opening.entity_id });
+    }
+    return choices;
   }
 
   private renderFixture(floor: Floor, fixture: Fixture): TemplateResult {
@@ -358,11 +396,8 @@ export class DioramaInspector extends LitElement {
       ? "Not found in Home Assistant"
       : !visual.available
         ? "Unavailable"
-        : visual.on
-          ? fixture.kind === "light" && visual.level < 1
-            ? `On, ${Math.round(visual.level * 100)}%`
-            : "On"
-          : "Off";
+        : stateText(fixture, visual, entity.state);
+    const tap = tapAction(fixture.kind, fixture.options, entity?.attributes);
     return html`
       <h2>${name}</h2>
       <p class="entity">${fixture.entity_id}</p>
@@ -377,21 +412,18 @@ export class DioramaInspector extends LitElement {
           @change=${(event: Event) =>
             change({ options: { ...fixture.options, tap: value(event) } })}
         >
-          ${(
-            [
-              ["toggle", "Switch on or off"],
-              ["more-info", "Show its details"],
-              ["none", "Do nothing"],
-            ] as const
-          ).map(
-            ([id, label]) =>
-              html`<option value=${id} ?selected=${tapAction(fixture.kind, fixture.options) === id}>
-                ${label}
+          ${tapChoices(fixture.kind).map(
+            (id) =>
+              html`<option value=${id} ?selected=${tap === id}>
+                ${TAP_LABELS[id](fixture.kind)}
               </option>`,
           )}
         </select>
       </label>
-      <p class="help">Press and hold always shows its details.</p>
+      <p class="help">
+        Press and hold always shows its
+        details.${fixture.kind === "lock" ? " A lock is never worked by a tap." : ""}
+      </p>
       ${item || fixture.model
         ? nothing
         : html`<label>
@@ -789,5 +821,39 @@ function value(event: Event): string {
 declare global {
   interface HTMLElementTagNameMap {
     "diorama-inspector": DioramaInspector;
+  }
+}
+
+const TAP_LABELS: Readonly<Record<TapAction, (kind: Fixture["kind"]) => string>> = {
+  toggle: (kind) => (kind === "cover" ? "Open or close" : "Switch on or off"),
+  confirm: (kind) => (kind === "cover" ? "Ask, then open or close" : "Ask, then switch on or off"),
+  "more-info": () => "Show its details",
+  none: () => "Do nothing",
+};
+
+/** What a fixture is doing, in words. */
+function stateText(fixture: Fixture, visual: FixtureVisual, state: string): string {
+  const words = state.replace(/_/g, " ");
+  const sentence = words.charAt(0).toUpperCase() + words.slice(1);
+  switch (fixture.kind) {
+    case "light":
+      return !visual.on ? "Off" : visual.level < 1 ? `On, ${Math.round(visual.level * 100)}%` : "On";
+    case "cover": {
+      const open = visual.open ?? 0;
+      return open === 0 ? "Closed" : open < 1 ? `Open, ${Math.round(open * 100)}%` : "Open";
+    }
+    case "opening":
+      return visual.on ? "Open" : "Closed";
+    case "presence":
+      return visual.on ? "Someone is here" : "Clear";
+    case "climate":
+      return `${visual.label ?? sentence}${visual.on ? ", heating" : ""}`;
+    case "label":
+      return visual.label ?? sentence;
+    case "lock":
+    case "media":
+      return sentence;
+    default:
+      return visual.on ? "On" : "Off";
   }
 }

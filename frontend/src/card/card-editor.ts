@@ -152,7 +152,7 @@ export class DioramaCardEditor extends LitElement {
           .checked=${config.interactive}
           @change=${(event: Event) => this.change({ interactive: checked(event) })}
         />
-        <span>Tapping a light or switch works it</span>
+        <span>Tapping a device works it</span>
       </label>
       <label class="check">
         <input
@@ -161,6 +161,14 @@ export class DioramaCardEditor extends LitElement {
           @change=${(event: Event) => this.change({ controls: checked(event) })}
         />
         <span>The view can be turned and zoomed</span>
+      </label>
+      <label class="check">
+        <input
+          type="checkbox"
+          .checked=${config.day_night}
+          @change=${(event: Event) => this.change({ day_night: checked(event) })}
+        />
+        <span>Day and night follow the sun</span>
       </label>
     `;
   }
