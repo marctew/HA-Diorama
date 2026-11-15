@@ -1,12 +1,13 @@
 import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators.js";
-import { describeFloors } from "../core/api";
+import { customElement, property, state } from "lit/decorators.js";
+import { DioramaApi, errorMessage } from "../core/api";
+import { newId } from "../core/ids";
+import "../editor/editor";
+import { icon } from "../editor/icons";
 import { HouseController } from "../shared/house-controller";
 import { roomIllustration } from "../shared/illustration";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant, PanelInfo } from "../types/hass";
-
-const MENU_ICON = "M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z";
 
 /** The Diorama page in the sidebar. A panel owns its whole page, so it draws
  * its own header and the button that opens the sidebar on narrow screens. */
@@ -17,6 +18,11 @@ export class DioramaPanel extends LitElement {
   @property({ attribute: false }) route?: { prefix: string; path: string };
   @property({ attribute: false }) panel?: PanelInfo;
 
+  /** The floor being edited; the first one until another is chosen. */
+  @state() private floorId?: string;
+  @state() private adding = false;
+  @state() private addError?: string;
+
   private readonly houseController = new HouseController(this);
 
   protected override willUpdate(changed: PropertyValues<this>): void {
@@ -24,38 +30,94 @@ export class DioramaPanel extends LitElement {
   }
 
   protected override render(): TemplateResult {
-    const version = this.panel?.config?.version;
+    const { house } = this.houseController;
+    const floors = house?.floors ?? [];
+    const current = floors.find((floor) => floor.id === this.floorId) ?? floors[0];
     return html`
       <header>
         ${this.showMenuButton()
           ? html`
               <button class="icon" aria-label="Open the sidebar" @click=${this.toggleSidebar}>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d=${MENU_ICON} /></svg>
+                ${icon("menu")}
               </button>
             `
           : nothing}
         <h1>Diorama</h1>
+        ${floors.length > 1
+          ? html`
+              <select
+                aria-label="Floor"
+                @change=${(event: Event) =>
+                  (this.floorId = (event.target as HTMLSelectElement).value)}
+              >
+                ${floors.map(
+                  (floor) =>
+                    html`<option value=${floor.id} ?selected=${floor.id === current?.id}>
+                      ${floor.name}
+                    </option>`,
+                )}
+              </select>
+            `
+          : current
+            ? html`<span class="floor-name">${current.name}</span>`
+            : nothing}
       </header>
       <main>
-        <div class="empty">
-          ${roomIllustration()}
-          <h2>Your house goes here</h2>
-          <p>
-            This is where you will draw your floors and rooms, add furniture and place your
-            devices. The editor is not built yet.
-          </p>
-          ${this.renderHouse()}
-          ${version ? html`<p class="version">Version ${version}</p>` : nothing}
-        </div>
+        ${current
+          ? html`<diorama-editor
+              .hass=${this.hass}
+              .floorId=${current.id}
+              ?narrow=${this.narrow}
+            ></diorama-editor>`
+          : this.renderEmpty()}
       </main>
     `;
   }
 
-  private renderHouse(): TemplateResult | typeof nothing {
+  private renderEmpty(): TemplateResult {
     const { house, error } = this.houseController;
-    if (error) return html`<p class="status error" role="alert">${error}</p>`;
-    if (!house) return nothing;
-    return html`<p class="status">${house.settings.name} · ${describeFloors(house)}</p>`;
+    const version = this.panel?.config?.version;
+    return html`
+      <div class="empty">
+        ${roomIllustration()}
+        ${error
+          ? html`<p class="error" role="alert">${error}</p>`
+          : !house
+            ? html`<p>Loading...</p>`
+            : html`
+                <h2>Start with a floor</h2>
+                <p>
+                  Draw the walls of one floor from above. Rooms appear as you close them off, and
+                  you can link each one to a Home Assistant area.
+                </p>
+                <button class="primary" ?disabled=${this.adding} @click=${this.addFirstFloor}>
+                  Add a floor
+                </button>
+                ${this.addError ? html`<p class="error" role="alert">${this.addError}</p>` : nothing}
+              `}
+        ${version ? html`<p class="version">Version ${version}</p>` : nothing}
+      </div>
+    `;
+  }
+
+  private async addFirstFloor(): Promise<void> {
+    const house = this.houseController.house;
+    if (!this.hass || !house || this.adding) return;
+    this.adding = true;
+    this.addError = undefined;
+    try {
+      const id = newId("f");
+      await new DioramaApi(this.hass).saveHouse(
+        { settings: house.settings, floors: [...house.floors, { id, name: "Ground floor" }] },
+        house.revision,
+      );
+      this.floorId = id;
+      // The house controller hears about the save and loads the new list.
+    } catch (error) {
+      this.addError = errorMessage(error);
+    } finally {
+      this.adding = false;
+    }
   }
 
   private showMenuButton(): boolean {
@@ -72,12 +134,15 @@ export class DioramaPanel extends LitElement {
       :host {
         display: flex;
         flex-direction: column;
-        height: 100%;
+        /* Home Assistant gives a panel no height of its own. */
+        height: 100vh;
+        height: 100dvh;
         background: var(--primary-background-color, #fafafa);
         color: var(--diorama-text);
         font-family: var(--ha-font-family-body, Roboto, system-ui, sans-serif);
       }
       header {
+        flex: none;
         display: flex;
         align-items: center;
         gap: 4px;
@@ -96,6 +161,28 @@ export class DioramaPanel extends LitElement {
         font-size: 20px;
         font-weight: 400;
       }
+      .floor-name {
+        margin-left: 4px;
+        padding: 3px 10px;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-radius: 999px;
+        font-size: 13px;
+      }
+      header select {
+        height: 32px;
+        margin-left: 4px;
+        padding: 0 8px;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+      }
+      header select option {
+        color: var(--primary-text-color, #000);
+        background: var(--card-background-color, #fff);
+      }
       button.icon {
         display: grid;
         place-items: center;
@@ -108,27 +195,28 @@ export class DioramaPanel extends LitElement {
         color: inherit;
         cursor: pointer;
       }
-      button.icon:focus-visible {
+      button:focus-visible,
+      select:focus-visible {
         outline: 2px solid currentColor;
         outline-offset: -4px;
       }
-      button.icon svg {
-        width: 24px;
-        height: 24px;
-        fill: currentColor;
-      }
       main {
         flex: 1;
-        display: grid;
-        place-items: center;
-        overflow: auto;
-        padding: 24px;
+        display: flex;
+        min-height: 0;
+      }
+      diorama-editor {
+        flex: 1;
+        min-width: 0;
       }
       .empty {
         display: grid;
         justify-items: center;
-        gap: 8px;
-        max-width: 420px;
+        align-content: center;
+        gap: 10px;
+        max-width: 440px;
+        margin: auto;
+        padding: 24px;
         text-align: center;
       }
       .empty svg {
@@ -147,21 +235,31 @@ export class DioramaPanel extends LitElement {
         line-height: 1.5;
         color: var(--diorama-text-muted);
       }
-      .status {
+      button.primary {
+        height: 40px;
         margin-top: 8px;
-        padding: 6px 14px;
-        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-        border-radius: 999px;
-        font-size: 0.875rem;
-        color: var(--diorama-text);
+        padding: 0 20px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--diorama-accent);
+        color: var(--text-primary-color, #fff);
+        font: inherit;
+        font-weight: 500;
+        cursor: pointer;
       }
-      .status.error {
-        border-color: var(--error-color, #db4437);
-        border-radius: 12px;
+      button.primary:focus-visible {
+        outline: 2px solid var(--diorama-text);
+        outline-offset: 2px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .error {
         color: var(--error-color, #db4437);
       }
       .version {
-        margin-top: 8px;
+        margin-top: 12px;
         font-size: 0.8125rem;
       }
     `,

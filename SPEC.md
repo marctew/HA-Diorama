@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 (the skeleton) and 2 (storage and the WebSocket API) are built. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 3 are built: the skeleton, storage and the WebSocket API, and the plan editor for walls and rooms. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -148,20 +148,29 @@ Units are metres and degrees. Plan coordinates are `x` (east) and `y` (south) on
 
 ## 6. Editor (panel)
 
-Layout: plan view (2D, SVG) as the main working surface, a live 3D preview you can toggle or split, a left rail of tools, a right inspector for the selection, a floor switcher.
+Layout: plan view (2D, SVG) as the main working surface, floating tool and save bars over it, a right inspector for the selection. A live 3D preview you can toggle or split comes with stage 4, the floor switcher with stage 8.
 
-Tools
+Built (stage 3)
 
-- Wall: click to place vertices, continuous chain, Esc to stop. Snaps to existing vertices, to wall midpoints, to 0/45/90 degrees and to a grid (default 5 cm, Alt disables). Live dimension labels; type a number to set length exactly.
-- Select/move: vertices, walls, openings, items, fixtures. Multi-select, delete, duplicate, undo/redo (command stack, at least 100 steps).
-- Door/window: click a wall, drag along it, edit width/height/sill in the inspector.
-- Room inspector: name, Home Assistant area (picker), floor finish, wall colour. Assigning an area offers that area's name as the room name.
-- Furniture: catalogue drawer with search and categories, drag into plan or 3D, rotate with R (15 degree steps, Shift for free), snaps to walls.
-- Devices: a drawer listing entities grouped by the selected room's area, unplaced first. Drag one into the room to create a fixture; kind and default model are picked from the entity domain and device class. A toggle shows entities from all areas.
-- Trace: upload a plan image, click two points and enter the real distance to set scale.
-- Floors: add, rename, reorder, set elevation, link to a Home Assistant floor, "copy outer walls from floor below".
+- Wall tool (`W`): click to place corners in a continuous run; Esc, right-click or double-click stops, and so does landing on a corner or wall that is already there. Live dimension label; type a length and press Enter to place the wall at exactly that length in the direction of the pointer.
+- Snapping, in order: an existing corner, the middle of a wall, a point on a wall, 0/45/90 degrees from the last corner (then level with another corner, else a 5 cm step of length), level with other corners on each axis, the 5 cm grid. A wall drawn nearly square onto another lands where its straight line meets it, so it comes out straight. Alt switches snapping off. Guide lines show what a point lined up with.
+- Select tool (`V`): click a corner, wall or room; Shift-click to add corners and walls; drag to move them (the grabbed corner snaps, the rest keep their places relative to it); Delete removes. Dragging the background pans, scrolling zooms about the pointer, space-drag and the middle button pan anywhere.
+- The wall graph is tidied after every finished edit (`core/plan.ts`): corners in the same place merge, a wall is split where another wall meets or crosses it, duplicates and zero-length walls go, corners no wall uses go. Deleting a wall rejoins the straight run it split. Deleting a corner in a run joins its two walls.
+- Rooms are found again after every edit (`core/rooms.ts`) and keep their id, name and area through moves, splits and joins, as section 5 describes.
+- Inspector: a room's name, Home Assistant area (grouped by floor; picking one names an unnamed room), floor finish, wall colour, area and perimeter; a wall's length (the end with fewer walls attached moves) and thickness; a corner's position; the floor's wall height and totals.
+- Undo and redo (200 steps), Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y.
+- Saving: explicit Save (Ctrl+S) with a status. Unsaved edits are written to `localStorage` as a draft as you go and offered back after a reload or crash. If the floor is saved elsewhere meanwhile, the editor reloads when there is nothing unsaved, and otherwise offers "load their version" or "save mine over it". Leaving the page with unsaved edits asks first.
+- Lengths and areas follow Home Assistant's unit system, for display and for typed input.
+- On a narrow screen the plan can be panned and zoomed but not edited.
 
-Saving: explicit Save with a dirty indicator, plus autosave of a local draft to `localStorage` so a crashed tab loses nothing. Conflict on save offers reload or overwrite.
+Still to come
+
+- Marquee selection and duplicate (with furniture, stage 5).
+- Door/window: click a wall, drag along it, edit width/height/sill in the inspector (stage 8).
+- Furniture: catalogue drawer with search and categories, drag into plan or 3D, rotate with R (15 degree steps, Shift for free), snaps to walls (stage 5).
+- Devices: a drawer listing entities grouped by the selected room's area, unplaced first. Drag one into the room to create a fixture; kind and default model are picked from the entity domain and device class. A toggle shows entities from all areas (stage 6).
+- Trace: upload a plan image, click two points and enter the real distance to set scale (stage 8).
+- Floors: add, rename, reorder, set elevation, link to a Home Assistant floor, "copy outer walls from floor below" (stage 8). Until then the panel creates one "Ground floor" and shows a plain picker if the house has more.
 
 ## 7. Renderer
 
@@ -288,6 +297,7 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - The Vite build needs `base: "./"`, or the preload of lazy chunks asks for them at the site root and gets a 404.
 - None of the integration categories fits a dashboard tool, so the manifest has no `categories`. The HACS action reports that as a warning, not a failure.
 - In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
+- Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
 
 Still open:

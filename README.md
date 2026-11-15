@@ -2,7 +2,7 @@
 
 Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
 
-> **Early days.** The integration installs, adds its panel and card, and can store a house, but there is no editor or 3D view yet: the panel and card only show a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
+> **Early days.** You can draw the walls and rooms of a floor from above and link rooms to Home Assistant areas. There is no 3D view, furniture or device placement yet, and the dashboard card only shows a placeholder. [SPEC.md](SPEC.md) has the design and the build order.
 
 ## Install
 
@@ -16,7 +16,7 @@ There are no releases yet, and the Marketplace installs Diorama from the zip att
 
 ## Use
 
-- **Diorama** in the sidebar (administrators only) is where the house is drawn.
+- **Diorama** in the sidebar (administrators only) is where the house is drawn. Press `W` to draw walls: click each corner, close the loop to make a room, type a length and press Enter for an exact wall. `V` selects and moves. Drawing needs a desktop-sized screen.
 - On a dashboard, add the **Diorama** card:
 
 ```yaml

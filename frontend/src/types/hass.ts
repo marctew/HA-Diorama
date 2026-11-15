@@ -28,6 +28,7 @@ export interface HomeAssistant {
   areas: Record<string, HassArea>;
   floors: Record<string, HassFloor>;
   user?: HassUser;
+  config?: { unit_system?: { length?: string } };
   dockedSidebar?: "docked" | "always_hidden" | "auto";
   callService(
     domain: string,
