@@ -140,4 +140,5 @@ export type SceneEvent =
   | { type: "house"; revision: number }
   | { type: "floor"; floor_id: string; revision: number }
   | { type: "floor_deleted"; floor_id: string }
+  | { type: "catalogue" }
   | { type: "reset"; revision: number };

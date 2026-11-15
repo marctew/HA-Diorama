@@ -356,10 +356,13 @@ export function toggledState(entityId: string, state: string): string {
   return state === "on" ? "off" : "on";
 }
 
-/** What a toggle would do, in words, for asking first: "Open", "Switch off". */
-export function toggleVerb(entityId: string, state: string): string {
+export type ToggleVerb = "open" | "close" | "switch_on" | "switch_off";
+
+/** What a toggle would do, for asking first. The words are in the locale
+ * files, under `view.<verb>` and `view.<verb>_question`. */
+export function toggleVerb(entityId: string, state: string): ToggleVerb {
   const next = toggledState(entityId, state);
-  if (next === "open") return "Open";
-  if (next === "closed") return "Close";
-  return next === "on" ? "Switch on" : "Switch off";
+  if (next === "open") return "open";
+  if (next === "closed") return "close";
+  return next === "on" ? "switch_on" : "switch_off";
 }

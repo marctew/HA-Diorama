@@ -80,10 +80,10 @@ describe("kinds and actions", () => {
     expect(toggledState("cover.a", "closed")).toBe("open");
     expect(toggledState("cover.a", "closing")).toBe("open");
     expect(toggledState("cover.a", "open")).toBe("closed");
-    expect(toggleVerb("cover.a", "closed")).toBe("Open");
-    expect(toggleVerb("cover.a", "open")).toBe("Close");
-    expect(toggleVerb("switch.a", "off")).toBe("Switch on");
-    expect(toggleVerb("switch.a", "on")).toBe("Switch off");
+    expect(toggleVerb("cover.a", "closed")).toBe("open");
+    expect(toggleVerb("cover.a", "open")).toBe("close");
+    expect(toggleVerb("switch.a", "off")).toBe("switch_on");
+    expect(toggleVerb("switch.a", "on")).toBe("switch_off");
   });
 
   it("reads the domain", () => {

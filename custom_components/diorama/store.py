@@ -246,6 +246,11 @@ class DioramaStore:
         self._floors[floor["id"]] = document
 
     @callback
+    def async_catalogue_changed(self) -> None:
+        """Tell subscribers that the list of models is not what it was."""
+        self._notify({"type": "catalogue"})
+
+    @callback
     def _notify(self, event: dict[str, Any]) -> None:
         for listener in list(self._listeners):
             try:

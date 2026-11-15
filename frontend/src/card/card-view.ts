@@ -3,7 +3,9 @@ import { customElement, property, state } from "lit/decorators.js";
 import { aspectRatioValue, type CardConfig } from "../core/card-config";
 import type { Floor, House } from "../core/scene";
 import { cameraFor, resolveView, type ViewResult } from "../core/views";
+import { splitAround } from "../core/localize";
 import { roomIllustration } from "../shared/illustration";
+import { languageOf, localizer, type Localize } from "../shared/localize";
 import { navigate } from "../shared/navigate";
 import { SceneController } from "../shared/scene-controller";
 import { themeStyles } from "../shared/theme";
@@ -72,20 +74,23 @@ export class DioramaCardView extends LitElement {
 
   private renderStage(config: CardConfig): TemplateResult {
     const view = this.view;
+    const t = localizer(this, languageOf(this.hass));
     if (this.scene.error && view.status !== "ready") {
-      return this.message("Diorama is not available", html`${this.scene.error}`, true);
+      return this.message(t("card.unavailable"), html`${this.scene.error}`, true);
     }
-    if (view.status === "empty") return this.message("No house drawn yet", this.hint("to draw it"));
+    if (view.status === "empty") return this.message(t("card.empty"), this.hint(t));
     if (view.status === "missing") {
       return this.message(
-        view.what === "room" ? "This room is no longer there" : "This floor is no longer there",
-        html`Edit the card and choose another.`,
+        t(view.what === "room" ? "card.room_gone" : "card.floor_gone"),
+        html`${t("card.choose_another")}`,
       );
     }
     if (this.sceneFailed) {
-      return this.message("The 3D view could not be loaded", html`Reload the page to try again.`, true);
+      return this.message(t("card.scene_failed"), html`${t("card.reload")}`, true);
     }
-    if (view.status === "loading" || !this.sceneLoaded) return html`<p class="loading">Loading...</p>`;
+    if (view.status === "loading" || !this.sceneLoaded) {
+      return html`<p class="loading">${t("card.loading")}</p>`;
+    }
     return html`<diorama-scene-view
       .floors=${view.floors}
       .camera=${this.camera}
@@ -110,12 +115,10 @@ export class DioramaCardView extends LitElement {
     `;
   }
 
-  private hint(purpose: string): TemplateResult {
-    if (this.hass?.user?.is_admin) {
-      return html`Open <a href="/diorama" @click=${this.openPanel}>Diorama</a> in the sidebar
-        ${purpose}.`;
-    }
-    return html`Ask an administrator ${purpose}.`;
+  private hint(t: Localize): TemplateResult {
+    if (!this.hass?.user?.is_admin) return html`${t("card.empty_user")}`;
+    const [before, after] = splitAround(t("card.empty_admin"), "link");
+    return html`${before}<a href="/diorama" @click=${this.openPanel}>Diorama</a>${after}`;
   }
 
   private openPanel(event: Event): void {

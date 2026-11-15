@@ -5,14 +5,15 @@ import { parseCardConfig, tidyCardConfig, type CardConfig, type CardView } from 
 import type { WallMode } from "../core/cutaway";
 import type { Floor, House } from "../core/scene";
 import { camerasFor } from "../core/views";
+import { languageOf, localizer, type Localize, type TranslationKey } from "../shared/localize";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 
-const SHAPES: readonly [string, string][] = [
-  ["16:9", "Wide (16:9)"],
-  ["4:3", "Standard (4:3)"],
-  ["1:1", "Square"],
-  ["3:4", "Tall (3:4)"],
+const SHAPES: readonly [string, TranslationKey][] = [
+  ["16:9", "settings.shape_wide"],
+  ["4:3", "settings.shape_standard"],
+  ["1:1", "settings.shape_square"],
+  ["3:4", "settings.shape_tall"],
 ];
 
 /** The card's settings in the dashboard editor. Home Assistant gives it the
@@ -82,41 +83,43 @@ export class DioramaCardEditor extends LitElement {
     const config = this.config;
     const floors = this.house?.floors ?? [];
     const rooms = config.floor ? (this.floors[config.floor]?.rooms ?? []) : [];
+    const t = localizer(this, languageOf(this.hass));
     return html`
       <label>
-        <span>Show</span>
+        <span>${t("settings.show")}</span>
         <select @change=${(event: Event) => this.setView(value(event) as CardView)}>
-          ${option("house", "The whole house", config.view)}
-          ${option("floor", "One floor", config.view)} ${option("room", "One room", config.view)}
+          ${option("house", t("settings.show_house"), config.view)}
+          ${option("floor", t("settings.show_floor"), config.view)}
+          ${option("room", t("settings.show_room"), config.view)}
         </select>
       </label>
       ${config.view === "house"
         ? nothing
         : html`<label>
-            <span>Floor</span>
+            <span>${t("settings.floor")}</span>
             <select @change=${(event: Event) => this.change({ floor: value(event), room: undefined })}>
               ${config.floor && floors.some((floor) => floor.id === config.floor)
                 ? nothing
-                : html`<option value="" selected>Choose a floor</option>`}
+                : html`<option value="" selected>${t("settings.choose_floor")}</option>`}
               ${floors.map((floor) => option(floor.id, floor.name, config.floor))}
             </select>
           </label>`}
       ${config.view !== "room"
         ? nothing
         : html`<label>
-            <span>Room</span>
+            <span>${t("settings.room")}</span>
             <select
               ?disabled=${!config.floor}
               @change=${(event: Event) => this.change({ room: value(event) })}
             >
               ${config.room && rooms.some((room) => room.id === config.room)
                 ? nothing
-                : html`<option value="" selected>Choose a room</option>`}
-              ${rooms.map((room) => option(room.id, room.name || "Unnamed room", config.room))}
+                : html`<option value="" selected>${t("settings.choose_room")}</option>`}
+              ${rooms.map((room) => option(room.id, room.name || t("settings.unnamed_room"), config.room))}
             </select>
           </label>`}
       ${this.house && floors.length === 0
-        ? html`<p class="note">Nothing has been drawn yet. Open Diorama in the sidebar first.</p>`
+        ? html`<p class="note">${t("settings.nothing_drawn")}</p>`
         : nothing}
       ${config.view === "house" && floors.length > 1
         ? html`<label class="check">
@@ -125,25 +128,25 @@ export class DioramaCardEditor extends LitElement {
               .checked=${config.floor_gap > 0}
               @change=${(event: Event) => this.change({ floor_gap: checked(event) ? 2.5 : 0 })}
             />
-            <span>Space the floors apart, to see into the lower ones</span>
+            <span>${t("settings.floor_gap")}</span>
           </label>`
         : nothing}
-      ${this.renderCameras(config)}
+      ${this.renderCameras(config, t)}
       <label>
-        <span>Shape</span>
+        <span>${t("settings.shape")}</span>
         <select @change=${(event: Event) => this.change({ aspect_ratio: value(event) })}>
           ${SHAPES.some(([ratio]) => ratio === config.aspect_ratio)
             ? nothing
             : option(config.aspect_ratio, config.aspect_ratio, config.aspect_ratio)}
-          ${SHAPES.map(([ratio, label]) => option(ratio, label, config.aspect_ratio))}
+          ${SHAPES.map(([ratio, label]) => option(ratio, t(label), config.aspect_ratio))}
         </select>
       </label>
       <label>
-        <span>Walls</span>
+        <span>${t("settings.walls")}</span>
         <select @change=${(event: Event) => this.change({ walls: value(event) as WallMode })}>
-          ${option("auto", "Lower the ones in the way", config.walls)}
-          ${option("full", "All at full height", config.walls)}
-          ${option("low", "All low", config.walls)}
+          ${option("auto", t("settings.walls_auto"), config.walls)}
+          ${option("full", t("settings.walls_full"), config.walls)}
+          ${option("low", t("settings.walls_low"), config.walls)}
         </select>
       </label>
       <label class="check">
@@ -152,7 +155,7 @@ export class DioramaCardEditor extends LitElement {
           .checked=${config.interactive}
           @change=${(event: Event) => this.change({ interactive: checked(event) })}
         />
-        <span>Tapping a device works it</span>
+        <span>${t("settings.interactive")}</span>
       </label>
       <label class="check">
         <input
@@ -160,7 +163,7 @@ export class DioramaCardEditor extends LitElement {
           .checked=${config.controls}
           @change=${(event: Event) => this.change({ controls: checked(event) })}
         />
-        <span>The view can be turned and zoomed</span>
+        <span>${t("settings.controls")}</span>
       </label>
       <label class="check">
         <input
@@ -168,19 +171,19 @@ export class DioramaCardEditor extends LitElement {
           .checked=${config.day_night}
           @change=${(event: Event) => this.change({ day_night: checked(event) })}
         />
-        <span>Day and night follow the sun</span>
+        <span>${t("settings.day_night")}</span>
       </label>
     `;
   }
 
-  private renderCameras(config: CardConfig): TemplateResult | typeof nothing {
+  private renderCameras(config: CardConfig, t: Localize): TemplateResult | typeof nothing {
     const cameras = this.house ? camerasFor(this.house, config) : [];
     const known = cameras.some((camera) => camera.id === config.camera);
     if (cameras.length === 0 && config.camera === "default") return nothing;
     return html`<label>
-      <span>Look from</span>
+      <span>${t("settings.look_from")}</span>
       <select @change=${(event: Event) => this.change({ camera: value(event) || "default" })}>
-        <option value="" ?selected=${!known}>Wherever shows it all</option>
+        <option value="" ?selected=${!known}>${t("settings.look_from_default")}</option>
         ${cameras.map((camera) => option(camera.id, camera.name, config.camera))}
       </select>
     </label>`;

@@ -4,6 +4,7 @@
 import {
   AmbientLight,
   Box3,
+  type BufferGeometry,
   DirectionalLight,
   HemisphereLight,
   Mesh,
@@ -42,8 +43,18 @@ export function thumbnail(url: string): Promise<string | undefined> {
   return picture;
 }
 
+/** A picture of a model that is already in hand. */
+export function pictureOf(geometry: BufferGeometry): Promise<string | undefined> {
+  const picture = queue.then(() => drawGeometry(geometry));
+  queue = picture.catch(() => undefined);
+  return picture;
+}
+
 async function draw(url: string): Promise<string | undefined> {
-  const geometry = await loadModel(url);
+  return drawGeometry(await loadModel(url));
+}
+
+function drawGeometry(geometry: BufferGeometry): string | undefined {
   if (surface === undefined) {
     const canvas = document.createElement("canvas");
     canvas.width = canvas.height = SIZE;

@@ -3,21 +3,27 @@ import { customElement, property, state } from "lit/decorators.js";
 import {
   categories,
   EMPTY_CATALOGUE,
+  isOwnModel,
   modelUrl,
   searchModels,
   type Catalogue,
   type CatalogueModel,
 } from "../core/catalogue";
+import { modelFileId } from "../core/upload";
 import { formatLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
+import type { HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
 
 /** The furniture catalogue: search it, pick a piece, then click in the plan
  * to place it. Fires `catalogue-pick` with the model, or undefined to stop
- * placing, and `catalogue-close`. */
+ * placing, `catalogue-upload` with a file to add as a model, and
+ * `catalogue-close`. */
 @customElement("diorama-catalogue-drawer")
 export class DioramaCatalogueDrawer extends LitElement {
   @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
+  /** To fetch and remove the models people added themselves. */
+  @property({ attribute: false }) hass?: HomeAssistant;
   /** The model being placed, if any. */
   @property({ attribute: false }) picked?: CatalogueModel;
   @property() units: UnitSystem = "metric";
@@ -25,6 +31,9 @@ export class DioramaCatalogueDrawer extends LitElement {
   @state() private query = "";
   /** Pictures of the models, by model id, as they are drawn. */
   @state() private pictures: Readonly<Record<string, string>> = {};
+  /** One of your own models that "delete" has been pressed on once. */
+  @state() private confirming?: string;
+  @state() private deleteError?: string;
 
   private picturesFor?: Catalogue;
 
@@ -40,6 +49,11 @@ export class DioramaCatalogueDrawer extends LitElement {
     if (catalogue.models.length === 0) return;
     try {
       const { thumbnail } = await import("../render/thumbnails");
+      const hass = this.hass;
+      if (hass) {
+        const { setPrivateFetch } = await import("../render/models");
+        setPrivateFetch((path) => hass.fetchWithAuth(path));
+      }
       for (const model of catalogue.models) {
         const picture = await thumbnail(modelUrl(catalogue, model));
         if (this.catalogue !== catalogue) return;
@@ -53,6 +67,9 @@ export class DioramaCatalogueDrawer extends LitElement {
 
   protected override render(): TemplateResult {
     const found = searchModels(this.catalogue, this.query);
+    const bundled = found.filter((model) => !isOwnModel(model));
+    const own = found.filter(isOwnModel);
+    const searching = this.query.trim() !== "";
     return html`
       <header>
         <h2>Furniture</h2>
@@ -77,7 +94,8 @@ export class DioramaCatalogueDrawer extends LitElement {
           ? html`<p class="empty">The furniture catalogue could not be loaded.</p>`
           : found.length === 0
             ? html`<p class="empty">Nothing matches "${this.query}".</p>`
-            : categories(this.catalogue).map((category) => this.renderCategory(category, found))}
+            : categories(this.catalogue).map((category) => this.renderCategory(category, bundled))}
+        ${searching && own.length === 0 ? nothing : this.renderOwn(own, searching)}
       </div>
       <p class="help">
         ${this.picked
@@ -95,6 +113,77 @@ export class DioramaCatalogueDrawer extends LitElement {
       <h3>${category}</h3>
       <div class="tiles">${models.map((model) => this.renderTile(model))}</div>
     `;
+  }
+
+  /** Your own models, and the way to add one. */
+  private renderOwn(own: CatalogueModel[], searching: boolean): TemplateResult {
+    return html`
+      <h3>My models</h3>
+      <div class="tiles">
+        ${own.map(
+          (model) => html`
+            <div class="own">
+              ${this.renderTile(model)}
+              ${this.confirming === model.id
+                ? html`<button class="remove sure" @click=${() => this.deleteModel(model)}>Delete?</button>`
+                : html`<button
+                    class="remove"
+                    title="Delete this model"
+                    aria-label="Delete ${model.name}"
+                    @click=${() => {
+                      this.confirming = model.id;
+                      this.deleteError = undefined;
+                    }}
+                  >
+                    ${icon("close")}
+                  </button>`}
+            </div>
+          `,
+        )}
+        ${searching
+          ? nothing
+          : html`<label class="tile add" title="Add a .glb model of your own">
+              <input
+                type="file"
+                accept=".glb,model/gltf-binary"
+                @change=${(event: Event) => {
+                  const input = event.target as HTMLInputElement;
+                  const file = input.files?.[0];
+                  // So that the same file can be chosen again.
+                  input.value = "";
+                  if (file) {
+                    this.dispatchEvent(new CustomEvent("catalogue-upload", { detail: { file } }));
+                  }
+                }}
+              />
+              <span class="plus">${icon("plus")}</span>
+              <span class="name">Add a model</span>
+            </label>`}
+      </div>
+      ${this.confirming
+        ? html`<p class="note">Pieces already made from it stay in the plan as grey boxes.</p>`
+        : nothing}
+      ${this.deleteError ? html`<p class="note error" role="alert">${this.deleteError}</p>` : nothing}
+    `;
+  }
+
+  private async deleteModel(model: CatalogueModel): Promise<void> {
+    this.confirming = undefined;
+    if (!this.hass) return;
+    try {
+      const response = await this.hass.fetchWithAuth(
+        `/api/diorama/models/${modelFileId(model.id)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      if (this.picked?.id === model.id) {
+        this.dispatchEvent(new CustomEvent("catalogue-pick", { detail: { model: undefined } }));
+      }
+      // The list itself follows when Home Assistant says the catalogue changed.
+    } catch (error) {
+      console.warn("Diorama: could not delete the model", error);
+      this.deleteError = `${model.name} could not be deleted.`;
+    }
   }
 
   private renderTile(model: CatalogueModel): TemplateResult {
@@ -208,6 +297,77 @@ export class DioramaCatalogueDrawer extends LitElement {
         line-height: 1.2;
         text-align: center;
         cursor: pointer;
+      }
+      .own {
+        position: relative;
+        display: grid;
+      }
+      .remove {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--card-background-color, #fff);
+        color: var(--diorama-text-muted);
+        box-shadow: 0 0 0 1px var(--divider-color, rgba(0, 0, 0, 0.2));
+        cursor: pointer;
+        opacity: 0;
+      }
+      .remove svg {
+        width: 13px;
+        height: 13px;
+      }
+      .own:hover .remove,
+      .remove:focus-visible,
+      .remove.sure {
+        opacity: 1;
+      }
+      .remove.sure {
+        width: auto;
+        padding: 0 8px;
+        border-radius: 11px;
+        background: var(--error-color, #db4437);
+        color: #fff;
+        font: inherit;
+        font-size: 11px;
+        box-shadow: none;
+      }
+      .tile.add {
+        border: 1.5px dashed color-mix(in srgb, var(--diorama-text) 30%, transparent);
+        background: none;
+        color: var(--diorama-text-muted);
+      }
+      .tile.add input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: 0;
+        opacity: 0;
+      }
+      .tile.add:focus-within {
+        outline: 2px solid var(--diorama-accent);
+        outline-offset: 1px;
+      }
+      .plus {
+        display: grid;
+        place-items: center;
+        width: 64px;
+        height: 64px;
+      }
+      .note {
+        margin: 8px 2px 0;
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--diorama-text-muted);
+      }
+      .note.error {
+        color: var(--error-color, #c62828);
       }
       .tile:hover {
         background: color-mix(in srgb, var(--diorama-text) 9%, transparent);

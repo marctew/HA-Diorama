@@ -60,14 +60,7 @@ export class SceneController implements ReactiveController {
     this.started = true;
     const api = this.api;
     if (!api) return;
-    void api.getCatalogue().then(
-      (catalogue) => {
-        this.catalogue = catalogue;
-        this.host.requestUpdate();
-      },
-      // Without it the house is still shown, just without furniture.
-      () => undefined,
-    );
+    this.loadCatalogue();
     await this.loadHouse();
     if (!this.connected || this.unsubscribe) return;
     try {
@@ -77,6 +70,17 @@ export class SceneController implements ReactiveController {
     } catch {
       // Without the subscription it is shown, but not refreshed.
     }
+  }
+
+  private loadCatalogue(): void {
+    void this.api?.getCatalogue().then(
+      (catalogue) => {
+        this.catalogue = catalogue;
+        this.host.requestUpdate();
+      },
+      // Without it the house is still shown, just without furniture.
+      () => undefined,
+    );
   }
 
   private async loadHouse(): Promise<void> {
@@ -129,7 +133,10 @@ export class SceneController implements ReactiveController {
   private onEvent = (event: SceneEvent): void => {
     const api = this.api;
     if (!api) return;
-    if (event.type === "house") {
+    if (event.type === "catalogue") {
+      // A model was added or taken away.
+      this.loadCatalogue();
+    } else if (event.type === "house") {
       void this.loadHouse();
     } else if (event.type === "reset") {
       this.floors = new Map();

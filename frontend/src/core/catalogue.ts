@@ -12,6 +12,9 @@ export interface CatalogueModel {
   source: string;
   /** Path of the .glb file under the catalogue's base URL. */
   file: string;
+  /** For a model added on this installation: where its file is, to be
+   * fetched signed in. Then `file` is empty. */
+  url?: string;
   /** The box the model fills, in metres: width across, depth front to back. */
   width: number;
   depth: number;
@@ -42,8 +45,22 @@ export interface Catalogue {
 
 export const EMPTY_CATALOGUE: Catalogue = { version: 1, base_url: "", sources: [], models: [] };
 
+/** The source of the models people add themselves. */
+export const USER_SOURCE = "user";
+const PRIVATE_PREFIX = "/api/diorama/";
+
 export function modelUrl(catalogue: Catalogue, model: CatalogueModel): string {
-  return `${catalogue.base_url}/${model.file}`;
+  return model.url ?? `${catalogue.base_url}/${model.file}`;
+}
+
+/** Whether a model was added on this installation rather than bundled. */
+export function isOwnModel(model: CatalogueModel): boolean {
+  return model.source === USER_SOURCE;
+}
+
+/** Whether the file at a URL is only handed to someone who is signed in. */
+export function needsSignIn(url: string): boolean {
+  return url.startsWith(PRIVATE_PREFIX);
 }
 
 export function findModel(catalogue: Catalogue, id: string): CatalogueModel | undefined {

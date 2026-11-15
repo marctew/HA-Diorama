@@ -29,7 +29,9 @@ from .const import (
     PANEL_URL_PATH,
     STATIC_URL,
     TITLE,
+    USER_SOURCE,
 )
+from .models import ModelLibrary
 from .store import DioramaStore, StoredDataInvalid
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,13 +41,34 @@ _LOGGER = logging.getLogger(__name__)
 DATA_STATIC_REGISTERED: HassKey[bool] = HassKey(f"{DOMAIN}_static_registered")
 
 
+USER_SOURCE_ENTRY = {
+    "id": USER_SOURCE,
+    "name": "My models",
+    "author": "Added on this installation",
+    "licence": "",
+}
+
+
 @dataclass
 class DioramaData:
     """What a loaded config entry holds."""
 
     card_url: str
     store: DioramaStore
-    catalogue: dict[str, Any]
+    library: ModelLibrary
+    bundled: dict[str, Any]
+
+    @property
+    def catalogue(self) -> dict[str, Any]:
+        """The bundled models and, after them, the ones added here."""
+        added = self.library.catalogue_models()
+        if not added:
+            return self.bundled
+        return {
+            **self.bundled,
+            "sources": [*self.bundled["sources"], USER_SOURCE_ENTRY],
+            "models": [*self.bundled["models"], *added],
+        }
 
 
 type DioramaConfigEntry = ConfigEntry[DioramaData]
@@ -58,6 +81,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
         await store.async_load()
     except StoredDataInvalid as err:
         raise ConfigEntryError(str(err)) from err
+    library = ModelLibrary(hass)
+    await library.async_load()
     websocket_api.async_register(hass)
 
     integration = await async_get_integration(hass, DOMAIN)
@@ -97,9 +122,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
 
     card_url = versioned_url(CARD_FILE, version)
     frontend.add_extra_js_url(hass, card_url)
-    catalogue = await hass.async_add_executor_job(_read_catalogue, version)
+    bundled = await hass.async_add_executor_job(_read_catalogue, version)
     entry.runtime_data = DioramaData(
-        card_url=card_url, store=store, catalogue=catalogue
+        card_url=card_url, store=store, library=library, bundled=bundled
     )
     return True
 

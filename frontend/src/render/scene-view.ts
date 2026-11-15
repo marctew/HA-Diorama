@@ -8,8 +8,11 @@ import { allFixtures } from "../core/fixtures";
 import type { Fixture } from "../core/scene";
 import { DAYLIGHT, lightingFromSun } from "../core/sun";
 import { FixtureStates, moreInfo } from "../shared/fixture-state";
+import { splitAround } from "../core/localize";
+import { languageOf, localizer } from "../shared/localize";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
+import { setPrivateFetch } from "./models";
 import { nightOf, SceneRenderer, type SceneFloor } from "./scene-renderer";
 
 /** How long a question about a tap waits for an answer. */
@@ -107,16 +110,15 @@ export class DioramaSceneView extends LitElement {
   }
 
   protected override render(): TemplateResult {
+    const t = localizer(this, languageOf(this.hass));
     return html`
       <div class="canvas"></div>
       ${this.failed
-        ? html`<p class="message" role="alert">
-            The 3D view needs WebGL, which this browser has switched off or does not have.
-          </p>`
+        ? html`<p class="message" role="alert">${t("view.no_webgl")}</p>`
         : this.noReset || !this.controls
           ? nothing
-          : html`<button class="frame" title="Show everything" @click=${this.frame}>
-              Reset view
+          : html`<button class="frame" title=${t("view.reset_title")} @click=${this.frame}>
+              ${t("view.reset")}
             </button>`}
       ${this.renderAsking()}
     `;
@@ -128,10 +130,16 @@ export class DioramaSceneView extends LitElement {
     if (!fixture || !entity) return nothing;
     const friendly = entity.attributes.friendly_name;
     const name = typeof friendly === "string" && friendly ? friendly : fixture.entity_id;
+    const t = localizer(this, languageOf(this.hass));
     const verb = toggleVerb(fixture.entity_id, entity.state);
-    return html`<div class="ask" role="alertdialog" aria-label="${verb} ${name}?">
-      <span>${verb} <strong>${name}</strong>?</span>
-      <button @click=${this.stopAsking}>Cancel</button>
+    const [before, after] = splitAround(t(`view.${verb}_question`), "name");
+    return html`<div
+      class="ask"
+      role="alertdialog"
+      aria-label=${t(`view.${verb}_question`, { name })}
+    >
+      <span>${before}<strong>${name}</strong>${after}</span>
+      <button @click=${this.stopAsking}>${t("view.cancel")}</button>
       <button
         class="yes"
         @click=${() => {
@@ -139,7 +147,7 @@ export class DioramaSceneView extends LitElement {
           this.stopAsking();
         }}
       >
-        ${verb}
+        ${t(`view.${verb}`)}
       </button>
     </div>`;
   }
@@ -158,6 +166,11 @@ export class DioramaSceneView extends LitElement {
 
   protected override updated(changed: PropertyValues<this>): void {
     if (this.failed) return;
+    // Before anything is drawn: models people added are fetched signed in.
+    if (changed.has("hass") && this.hass) {
+      const hass = this.hass;
+      setPrivateFetch((path) => hass.fetchWithAuth(path));
+    }
     if (!this.renderer) {
       try {
         this.renderer = new SceneRenderer();

@@ -1,23 +1,62 @@
 # Diorama
 
-Lay out your house in 3D in Home Assistant, floor by floor and room by room, add furniture, and place your devices in it. Lights glow when they are on, and tapping a lamp toggles it. The same scene is a full-screen panel and a dashboard card showing the whole house, a floor or a room.
+Your house in 3D in Home Assistant. Draw it floor by floor and room by room, furnish it, and put your devices where they really are. Lights glow when they are on, blinds go up and down, doors swing open, rooms take the colour of their temperature, and a tap works whatever it lands on. The same house is a panel for drawing and a dashboard card for the whole house, one floor or one room.
 
-> **Early days.** You can draw the walls and rooms of a floor from above, furnish them from a catalogue of 33 pieces, see it all in 3D beside the plan as you work, link rooms to Home Assistant areas, and place your devices: lights glow when on, blinds go up and down, doors with a sensor swing open, rooms take the colour of their temperature, and a tap in the 3D view works whatever it lands on (a garage door asks first; a lock never moves on a tap). A dashboard card shows the whole house, a floor or a room, live. You can have several floors, doors and windows, and trace over a plan image. The card follows the sun, so the house is dark at night. This is an alpha. [SPEC.md](SPEC.md) has the design and the build order.
+![The Diorama panel: the plan on the left, the same floor in 3D on the right](docs/images/editor.png)
+
+![Four Diorama cards on a dashboard: a floor by day and at night, a kitchen and a bedroom](docs/images/dashboard.png)
+
+## What it does
+
+- **Draw**: walls with snapping and typed lengths, rooms found for you, doors and windows, several floors, and a plan image to trace over.
+- **Furnish**: 33 low-poly pieces are included, and you can add `.glb` models of your own.
+- **Place devices**: lights, switches, fans, blinds and covers, door and window sensors, thermostats and temperature sensors, motion and presence, media players, locks, and any other sensor as a reading.
+- **Use it**: tap a light, switch or blind to work it; press and hold anything for its details. A garage door or gate asks first, and a lock is never worked by a tap.
+- **Dashboard card**: the whole house, a floor or a room, from any saved camera angle, on any device. It follows the sun, so the house is dark at night with the lights that are on showing.
+
+Drawing needs a desktop-sized screen and an administrator. Looking and tapping work for everyone, on phones too.
 
 ## Install
 
 Diorama is a custom integration for Home Assistant 2026.11 or later, installed through the Marketplace. It is not in the catalogue yet, so add it from a link:
 
-1. Go to **Settings** > **Marketplace** and select **Add from link**.
-2. Enter `marctew/HA-Diorama`, type **Integration**, and install it.
-3. Add the **Diorama** integration when the setup opens. There is nothing to configure.
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=marctew&repository=HA-Diorama&category=integration)
 
-There are no releases yet, and the Marketplace installs Diorama from the zip attached to a release. Until the first one, build it yourself (see below).
+Or by hand: go to **Settings** > **Marketplace**, select **Add from link**, enter `marctew/HA-Diorama` with the type **Integration**, and install it. Then add the integration; there is nothing to configure:
 
-## Use
+[![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=diorama)
 
-- **Diorama** in the sidebar (administrators only) is where the house is drawn. Press `W` to draw walls: click each corner, close the loop to make a room, type a length and press Enter for an exact wall. `F` opens the furniture list: pick a piece and click to place it, `R` turns it. `B` lists your devices: pick one and click where it is, or on furniture that suits it (a lamp for a light, the TV for a media player) to make it that. A door or window takes its sensor or blind when you select it. `O` adds doors and windows. `V` selects and moves. With nothing selected, the panel on the right takes a plan image to trace over. The Floors button adds and arranges floors, and Views on the 3D side saves camera angles for cards to use. Drawing needs a desktop-sized screen.
-- On a dashboard, add the **Diorama** card and choose what it shows in its settings, or in YAML:
+An update to Diorama needs a restart of Home Assistant; the first install does not.
+
+## Draw your house
+
+**Diorama** in the sidebar opens the panel. The plan is on the left and the same floor in 3D on the right.
+
+| Key | Tool |
+|---|---|
+| `W` | Walls: click each corner and close the loop to make a room. Type a length and press Enter for an exact wall. |
+| `O` | Doors and windows: click a wall. |
+| `F` | Furniture: pick a piece, click to place it, `R` turns it. |
+| `B` | Devices: pick one, then click where it is. |
+| `V` | Select, move and delete. |
+
+- Select a room to name it, choose its floor and wall colour, and link it to a Home Assistant area. Its devices are then listed first.
+- A device dropped on furniture that suits it becomes that piece: a light on a lamp, a media player on the TV, a thermostat on the radiator.
+- A door or window takes a sensor or a blind of its own: select it and choose one. A door with a sensor swings open; a window with a blind shows how far down it is.
+- With nothing selected, the panel on the right takes a floor plan image to trace over.
+- **Floors** adds and arranges floors. **Views** on the 3D side saves camera angles for cards to use.
+
+![Placing devices: the list is by room, and each kind has its own badge on the plan](docs/images/devices.png)
+
+### Your own models
+
+At the bottom of the furniture list, **Add a model** takes a binary glTF file (`.glb`). You are shown the model and asked for its real size, since files rarely say; set the one dimension you know and the others follow. It is kept without its textures, in flat colours, so it matches the rest and stays small. Only add models you have the right to use.
+
+Models live in `diorama/models` in your configuration folder and are included in Home Assistant backups. Exporting a house does not include them.
+
+## The card
+
+Add the **Diorama** card to a dashboard and choose what it shows in its settings, or in YAML:
 
 ```yaml
 type: custom:diorama-card
@@ -28,12 +67,20 @@ aspect_ratio: "16:9"
 walls: auto           # auto lowers the walls in the way; full | low
 interactive: true     # false: taps do nothing
 controls: true        # false: the view cannot be turned or zoomed
-floor_gap: 2.5        # house view: space the floors apart (metres)
 day_night: true       # false: always daytime
+floor_gap: 2.5        # house view: space the floors apart (metres)
 camera: c_ab12cd34    # a saved view, easiest picked in the card's settings
 ```
 
-Tap a light, switch or blind to work it; press and hold anything for its details. Any number of cards can share a dashboard.
+Any number of cards can share a dashboard: they draw through one WebGL context, and a card that is off screen draws nothing.
+
+## Good to know
+
+- This is a first release. Keep an export of your house (it is in Home Assistant's backups too).
+- Day and night take the top of the plan to be north.
+- Lighting is drawn for looks, not simulated: a light washes the floor of its room.
+- English only so far. The card and the 3D view are ready for translations (`frontend/src/locales`); the drawing panel is not yet.
+- Removing the integration leaves your house, images and models where they are.
 
 ## Develop
 
@@ -54,8 +101,10 @@ npm run build       # writes custom_components/diorama/frontend/dist
 npm test && npm run typecheck && npm run lint
 ```
 
-To try it, link or copy `custom_components/diorama` into the `custom_components` folder of a Home Assistant configuration, build the frontend, restart, and add the integration.
+To try it, link or copy `custom_components/diorama` into the `custom_components` folder of a Home Assistant configuration, build the frontend, restart, and add the integration. [SPEC.md](SPEC.md) has the design and what was learned building it.
+
+A release is a published GitHub release whose tag equals `version` in `manifest.json`; an action builds the frontend and attaches `diorama.zip`, which is what the Marketplace installs.
 
 ## Licence
 
-MIT. Bundled models and their licences are listed in [CREDITS.md](CREDITS.md).
+MIT. The bundled models, the libraries in the frontend and their licences are listed in [CREDITS.md](CREDITS.md).

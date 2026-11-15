@@ -20,6 +20,7 @@ import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 import { icon } from "./icons";
 import "./catalogue-drawer";
+import "./model-dialog";
 import "./device-drawer";
 import "./inspector";
 import "./plan-view";
@@ -69,6 +70,8 @@ export class DioramaEditor extends LitElement {
   @state() private placing?: CatalogueModel;
   /** The entity the next click in the plan will place. */
   @state() private placingEntity?: string;
+  /** A file being added as a model. */
+  @state() private uploading?: File;
   @state() private placingKind: FixtureKind = "switch";
   /** What each fixture looks like now, for the badges in the plan. */
   @state() private visuals: ReadonlyMap<string, FixtureVisual> = new Map();
@@ -259,13 +262,7 @@ export class DioramaEditor extends LitElement {
     this.flushDraft();
     this.loadedId = floorId;
     this.loadError = undefined;
-    if (this.catalogue === EMPTY_CATALOGUE) {
-      // The plan works without it: furniture is then drawn as plain squares.
-      void api.getCatalogue().then(
-        (catalogue) => (this.catalogue = catalogue),
-        (error) => console.warn("Diorama: the furniture catalogue did not load", error),
-      );
-    }
+    if (this.catalogue === EMPTY_CATALOGUE) this.loadCatalogue();
     this.floor = undefined;
     this.saved = undefined;
     try {
@@ -334,7 +331,19 @@ export class DioramaEditor extends LitElement {
     await this.load(this.floorId);
   }
 
+  /** The plan works without it: furniture is then drawn as plain squares. */
+  private loadCatalogue(): void {
+    void this.api?.getCatalogue().then(
+      (catalogue) => (this.catalogue = catalogue),
+      (error) => console.warn("Diorama: the furniture catalogue did not load", error),
+    );
+  }
+
   private onSceneEvent = (event: SceneEvent): void => {
+    if (event.type === "catalogue") {
+      this.loadCatalogue();
+      return;
+    }
     if (!this.saved) return;
     const mine = event.type === "floor" && event.floor_id === this.saved.id;
     if (!mine && event.type !== "reset") return;
@@ -771,13 +780,34 @@ export class DioramaEditor extends LitElement {
     if (this.tool !== "furniture") return nothing;
     return html`<div class="dock">
       <diorama-catalogue-drawer
+        .hass=${this.hass}
         .catalogue=${this.catalogue}
         .picked=${this.placing}
         .units=${this.units}
         @catalogue-pick=${(event: CustomEvent<{ model?: CatalogueModel }>) =>
           (this.placing = event.detail.model)}
+        @catalogue-upload=${(event: CustomEvent<{ file: File }>) =>
+          (this.uploading = event.detail.file)}
         @catalogue-close=${() => this.setTool("select")}
       ></diorama-catalogue-drawer>
+      ${this.uploading
+        ? html`<diorama-model-dialog
+            .hass=${this.hass}
+            .file=${this.uploading}
+            .units=${this.units}
+            @model-close=${() => (this.uploading = undefined)}
+            @model-added=${(event: CustomEvent<{ model: CatalogueModel }>) => {
+              const model = event.detail.model;
+              this.uploading = undefined;
+              // Shown at once; the catalogue itself is fetched again when
+              // Home Assistant says it has changed.
+              if (!this.catalogue.models.some((known) => known.id === model.id)) {
+                this.catalogue = { ...this.catalogue, models: [...this.catalogue.models, model] };
+              }
+              this.placing = model;
+            }}
+          ></diorama-model-dialog>`
+        : nothing}
     </div>`;
   }
 

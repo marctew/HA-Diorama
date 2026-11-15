@@ -103,11 +103,11 @@ WebSocket commands (`websocket_api.py`, built)
 | `diorama/subscribe` | any user | Events: `{type: "house", revision}`, `{type: "floor", floor_id, revision}`, `{type: "floor_deleted", floor_id}`, `{type: "reset", revision}` after an import |
 | `diorama/export` | admin | Returns `{export: {diorama_export: 1, house, floors: {id: floor}}}` |
 | `diorama/import` `{data}` | admin | Replaces the whole house with an export. Every revision jumps above anything a client can be holding |
-| `diorama/catalogue/get` | any user | Returns `{catalogue}`: the bundled models (section 10) and `base_url`, where their files are served. Uploaded models join it in stage 10 |
+| `diorama/catalogue/get` | any user | Returns `{catalogue}`: the bundled models (section 10) and `base_url`, where their files are served. Models people have added come after them, with a `url` instead of a `file` |
 
 Errors use Home Assistant's `{code, message}`: `invalid_format` with the path of the problem (`walls.0.b: there is no vertex 'v9'`), `conflict` when `revision` is not the current one (nothing is saved; the client reloads), `not_found` for an unknown floor, `unauthorized` for a non-admin, `invalid_stored_data` when a stored floor fails validation.
 
-HTTP (`http.py`): plan images are built; model upload comes in stage 10
+HTTP (`http.py`): plan images and models
 
 - `POST /api/diorama/trace` (admin): the body is a PNG, JPEG or WebP image, recognised by its first bytes and not by any name or type the client gives, at most 10 MB. It is stored in `<config>/diorama/trace/` under a generated id, which is returned. `GET /api/diorama/trace/<id>` serves it to any signed-in user; `DELETE` (admin) removes it. An image a floor no longer uses is not cleaned up yet.
 
@@ -277,7 +277,13 @@ Built (stage 5)
 Not done
 
 - The Kenney Furniture Kit and Quaternius furniture (both CC0) were the plan for the bundled set. The Kenney kit could not be fetched automatically: the site hands out its download through a signed link behind a "continue without donating" step, and scripting round that is not something to do without the owner's say. To add it, download the kit by hand, and extend `tools/build_catalogue.py` to read its `.glb` files, set each model's real-world scale (the kits are not at real scale or consistent with each other), remap materials to the palette, and check every model by eye against a 2.4 m wall. Quaternius has not been looked at.
-- User uploads ("My models", with a dimension prompt) come in stage 10.
+
+My models (stage 10)
+
+- "Add a model" at the foot of the furniture list takes a `.glb`. The browser reads it (`render/model-import.ts`), shows it, and asks how big it really is (`editor/model-dialog.ts`): the three sizes are linked, a file drawn in millimetres or centimetres is guessed as such (`core/upload.ts`), and a size over 30 m is refused. It then writes the model out again in the bundled format (one mesh, real size, standing on the floor, middle on the origin, vertex colours, no textures) and sends that, so what is stored is small and draws like everything else. The server never parses a model: it checks the glTF header and the size (10 MB) and keeps the bytes.
+- `models.py` keeps the files in `<config>/diorama/models/m_<16 hex>.glb` and the list (name, sizes, against a wall) in `.storage/diorama.models`; at most 200. They appear in the catalogue after the bundled ones as `user/m_...`, category "My models", with a `url` under `/api/diorama/models/`. That address needs a signed-in user, so the frontend fetches it with `hass.fetchWithAuth` (`setPrivateFetch` in `render/models.ts`) where bundled models are fetched plainly.
+- Adding and deleting are for administrators and send a `catalogue` event to subscribers, so open cards and panels fetch the catalogue again. Deleting a model leaves the pieces made from it in place, drawn as grey boxes like any unknown model.
+- Not done: renaming or resizing a model after adding it (delete and add again), `.gltf` with separate files, textures, and carrying models in an export of the house.
 - Budget: bundled assets under 15 MB total, any single model under 500 kB (the second is tested).
 
 ## 11. Quality, testing and release
@@ -290,7 +296,7 @@ Not done
 - `hacs.json`: `{"name": "Diorama", "zip_release": true, "filename": "diorama.zip", "homeassistant": "2026.11.0"}`.
 - Updates to an integration need a Home Assistant restart; a first install does not (config flow).
 - Catalogue: listing for everyone means a pull request to `hacs/default`, which the docs say takes months to be reviewed. It needs a description, topics, issues enabled, a README, a full release, a `brand/icon.png`, and passing hassfest and HACS action runs. Until then users add the repo from a link: put a `marketplace_repository` My link badge (`owner=marctew&repository=HA-Diorama&category=integration`) and a `config_flow_start` badge in the README.
-- Translations: `translations/en.json` for the backend (config flow, errors) and a frontend locale file; English only at launch, structured so others can be added.
+- Translations: `translations/en.json` for the backend (config flow). In the frontend, `locales/en.ts` holds the words and is the list of keys; `shared/localize.ts` gives a component `t(key, values)` for the language Home Assistant is set to, fetching a language the first time it is wanted and falling back to English key by key. A new language is one file and one line in `LOADERS`. So far the card, its settings and the 3D view's own prompts go through it: everything someone who only looks at a dashboard sees. The drawing panel, which only administrators use, still has its English in place; moving it over is mechanical and is the next step before asking for translations. Messages for a mistake in a card's YAML are English too.
 - Supported Home Assistant: 2026.11 or later (set in `hacs.json` and `manifest.json`).
 
 ## 12. Build order
@@ -308,7 +314,7 @@ Each stage ends with something that runs and with its tests.
 9. More bindings in the order of the table in section 8; day and night.
 10. Release: README with screenshots, CREDITS, model upload, translations structure, Marketplace submission.
 
-Stages 1 to 7 are the first public alpha. Stages 1 to 9 are built.
+All ten stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
 
 ## 13. Decisions already made
 
@@ -360,9 +366,18 @@ Learned while building stage 9:
 - A template cover goes straight from `closed` to `open`; a real one reports `opening` for a while. The optimistic state covers both: it waits for the state it expects and gives up after three seconds.
 - Home Assistant's own frontend logs an unhandled `unknown_command` rejection on every page of the bare test instance. It is not Diorama's.
 
+Learned while building stage 10:
+
+- Home Assistant 2026.11.1 runs everything as 2026.10.4 did; nothing needed changing.
+- `hass.fetchWithAuth` answers are cached by the browser like any other (`Cache-Control: private`), so a plain `fetch` of a model's address from the same browser can succeed afterwards. Someone who is not signed in gets 401, which is what the tests check.
+- three.js's `GLTFExporter.parseAsync` with `binary: true` gives an `ArrayBuffer`, and writes vertex colours as `COLOR_0` when the material has `vertexColors`. It is loaded only when a model is being added (36 kB).
+- `LitElement` has a `remove()` of its own from `HTMLElement`: a private method of that name does not compile.
+- The plan was squeezed to a sliver when a list was docked beside it in split view on a laptop; the 3D side now gives way (found while taking screenshots, not by a test).
+
 Still open:
 
-- Nothing has been run on Home Assistant 2026.11 itself, or installed through the Marketplace. Do both before the first release.
+- Stages 9 and 10 were run end to end on Home Assistant 2026.11.1 (a second environment with that version: the test tooling still installs 2026.10.4, which is what pytest and CI run on). Nothing has been installed through the Marketplace: that needs a published release. Do it with a pre-release before the first real one.
+- To release: merge to `main`; give the repository a description and topics (the HACS action fails without them); publish a GitHub release tagged `0.1.0` with the 0.1.0 section of `CHANGELOG.md` as its notes, as a pre-release first; check that the action attached `diorama.zip`; install it through the Marketplace from the link on a real installation. Listing in the catalogue is then a pull request to `hacs/default`.
 - hassfest passes in CI. The HACS action fails until the repository has a description and topics, and a licence on the default branch (the LICENSE file is there once this work is merged); its manifest, brand, issues and `hacs.json` checks pass.
 - The card config editor API (`getConfigElement`, `getStubConfig`, or a form schema): read https://contributors.home-assistant.io/frontend/custom-ui/card-editor/ at the start of stage 7.
 - That no entry in the catalogue (`hacs/default`) already uses the name or domain `diorama`.

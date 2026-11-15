@@ -25,3 +25,10 @@ CATALOGUE_FILE = "catalogue.json"
 # the integration's own folder, which an update replaces).
 TRACE_FOLDER = "diorama/trace"
 TRACE_MAX_BYTES = 10 * 1024 * 1024
+
+# Models people add themselves, kept the same way.
+MODEL_FOLDER = "diorama/models"
+MODEL_MAX_BYTES = 10 * 1024 * 1024
+MODEL_LIMIT = 200
+MODELS_KEY = "diorama.models"
+USER_SOURCE = "user"

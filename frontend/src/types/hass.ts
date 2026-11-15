@@ -38,6 +38,9 @@ export interface HomeAssistant {
   devices?: Record<string, { area_id?: string | null }>;
   floors: Record<string, HassFloor>;
   user?: HassUser;
+  /** The language this user has chosen, such as "en-GB". */
+  locale?: { language?: string };
+  language?: string;
   config?: { unit_system?: { length?: string } };
   dockedSidebar?: "docked" | "always_hidden" | "auto";
   callService(
