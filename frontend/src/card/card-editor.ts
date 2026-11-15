@@ -4,6 +4,7 @@ import { DioramaApi } from "../core/api";
 import { parseCardConfig, tidyCardConfig, type CardConfig, type CardView } from "../core/card-config";
 import type { WallMode } from "../core/cutaway";
 import type { Floor, House } from "../core/scene";
+import { camerasFor } from "../core/views";
 import { themeStyles } from "../shared/theme";
 import type { HomeAssistant } from "../types/hass";
 
@@ -117,6 +118,17 @@ export class DioramaCardEditor extends LitElement {
       ${this.house && floors.length === 0
         ? html`<p class="note">Nothing has been drawn yet. Open Diorama in the sidebar first.</p>`
         : nothing}
+      ${config.view === "house" && floors.length > 1
+        ? html`<label class="check">
+            <input
+              type="checkbox"
+              .checked=${config.floor_gap > 0}
+              @change=${(event: Event) => this.change({ floor_gap: checked(event) ? 2.5 : 0 })}
+            />
+            <span>Space the floors apart, to see into the lower ones</span>
+          </label>`
+        : nothing}
+      ${this.renderCameras(config)}
       <label>
         <span>Shape</span>
         <select @change=${(event: Event) => this.change({ aspect_ratio: value(event) })}>
@@ -151,6 +163,19 @@ export class DioramaCardEditor extends LitElement {
         <span>The view can be turned and zoomed</span>
       </label>
     `;
+  }
+
+  private renderCameras(config: CardConfig): TemplateResult | typeof nothing {
+    const cameras = this.house ? camerasFor(this.house, config) : [];
+    const known = cameras.some((camera) => camera.id === config.camera);
+    if (cameras.length === 0 && config.camera === "default") return nothing;
+    return html`<label>
+      <span>Look from</span>
+      <select @change=${(event: Event) => this.change({ camera: value(event) || "default" })}>
+        <option value="" ?selected=${!known}>Wherever shows it all</option>
+        ${cameras.map((camera) => option(camera.id, camera.name, config.camera))}
+      </select>
+    </label>`;
   }
 
   private setView(view: CardView): void {

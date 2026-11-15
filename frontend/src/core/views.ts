@@ -3,7 +3,7 @@
 
 import { pointInPolygon, type Point } from "./geometry";
 import { roomPolygon } from "./rooms";
-import type { Floor, House } from "./scene";
+import type { Camera, Floor, House } from "./scene";
 
 export type ViewKind = "house" | "floor" | "room";
 
@@ -11,6 +11,9 @@ export interface ViewRequest {
   view: ViewKind;
   floor?: string;
   room?: string;
+  /** Extra space between the floors of the house view, in metres, so that the
+   * lower ones can be seen into. */
+  floor_gap?: number;
 }
 
 export interface ViewFloor {
@@ -47,12 +50,20 @@ export function resolveView(
   if (request.view === "house") {
     if (!needed.every((id) => loaded.has(id))) return { status: "loading" };
     const lowest = Math.min(...house.floors.map((floor) => floor.elevation));
+    // Spread apart from the bottom up: the nth floor from the ground rises by
+    // n gaps.
+    const gap = Math.max(0, request.floor_gap ?? 0);
+    const rank = new Map(
+      [...house.floors]
+        .sort((a, b) => a.elevation - b.elevation)
+        .map((meta, index) => [meta.id, index]),
+    );
     return {
       status: "ready",
       title: house.settings.name,
       floors: house.floors.map((meta) => ({
         floor: loaded.get(meta.id)!,
-        elevation: meta.elevation - lowest,
+        elevation: Number((meta.elevation - lowest + gap * rank.get(meta.id)!).toFixed(4)),
       })),
     };
   }
@@ -126,4 +137,33 @@ export function roomOnly(floor: Floor, roomId: string): Floor {
       ),
     trace: null,
   };
+}
+
+/** A saved camera view as a particular view needs it: lifted by the height
+ * its floor is shown at. Undefined if there is no such view, or its floor is
+ * not among those shown. */
+export function cameraFor(
+  house: Pick<House, "cameras">,
+  floors: readonly ViewFloor[],
+  cameraId: string | undefined,
+): Pick<Camera, "position" | "target"> | undefined {
+  const camera = house.cameras.find((candidate) => candidate.id === cameraId);
+  if (!camera) return undefined;
+  let lift = 0;
+  if (camera.floor !== null) {
+    const shown = floors.find(({ floor }) => floor.id === camera.floor);
+    if (!shown) return undefined;
+    lift = shown.elevation;
+  }
+  return {
+    position: [camera.position[0], camera.position[1] + lift, camera.position[2]],
+    target: [camera.target[0], camera.target[1] + lift, camera.target[2]],
+  };
+}
+
+/** The saved views that make sense for a view: all of them for the house,
+ * and for a floor or room those saved on that floor or on none. */
+export function camerasFor(house: Pick<House, "cameras">, request: ViewRequest): Camera[] {
+  if (request.view === "house") return house.cameras;
+  return house.cameras.filter((camera) => camera.floor === null || camera.floor === request.floor);
 }

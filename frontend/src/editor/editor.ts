@@ -12,7 +12,8 @@ import { deleteOpenings, type OpeningType } from "../core/openings";
 import { deleteVertices, deleteWalls } from "../core/plan";
 import { calibrate, newTrace } from "../core/trace";
 import { parseLength } from "../core/units";
-import type { Floor, SceneEvent } from "../core/scene";
+import { newId } from "../core/ids";
+import type { Camera, Floor, House, SceneEvent } from "../core/scene";
 import type { UnitSystem } from "../core/units";
 import { FixtureStates } from "../shared/fixture-state";
 import { themeStyles } from "../shared/theme";
@@ -44,6 +45,9 @@ function content(floor: Floor): string {
 export class DioramaEditor extends LitElement {
   @property({ attribute: false }) hass?: HomeAssistant;
   @property() floorId?: string;
+  /** The house, for its saved views. Changes to them leave as
+   * `cameras-change` events; whoever owns the house saves them. */
+  @property({ attribute: false }) house?: House;
   /** On a narrow screen the plan can be looked at but not changed. */
   @property({ type: Boolean, reflect: true }) narrow = false;
 
@@ -75,6 +79,8 @@ export class DioramaEditor extends LitElement {
   @state() private calibrating = false;
   /** The two points picked, waiting for the real distance between them. */
   @state() private measured?: { first: Point; second: Point };
+  /** The list of saved views is open. */
+  @state() private viewsOpen = false;
   @state() private viewMode: ViewMode = "split";
   /** The 3D view's code has arrived. It is only fetched when first shown. */
   @state() private sceneLoaded = false;
@@ -584,11 +590,105 @@ export class DioramaEditor extends LitElement {
     }
     if (!this.sceneLoaded) return html`<p class="pane-message">Loading the 3D view...</p>`;
     return html`<diorama-scene-view
-      .floors=${this.sceneFloors}
-      .catalogue=${this.catalogue}
-      .hass=${this.hass}
-      .highlightRoom=${this.selection.room}
-    ></diorama-scene-view>`;
+        .floors=${this.sceneFloors}
+        .catalogue=${this.catalogue}
+        .hass=${this.hass}
+        .highlightRoom=${this.selection.room}
+      ></diorama-scene-view>
+      ${this.renderViews()}`;
+  }
+
+  // Saved views: a camera position with a name, for cards to look from.
+
+  /** The views saved on this floor, or on none. */
+  private get cameras(): Camera[] {
+    return (this.house?.cameras ?? []).filter(
+      (camera) => camera.floor === null || camera.floor === this.floorId,
+    );
+  }
+
+  private renderViews(): TemplateResult | typeof nothing {
+    if (!this.house || this.narrow) return nothing;
+    const cameras = this.cameras;
+    const full = this.house.cameras.length >= 30;
+    return html`
+      <button
+        class="views-button"
+        aria-expanded=${this.viewsOpen}
+        @click=${() => (this.viewsOpen = !this.viewsOpen)}
+      >
+        ${icon("camera")} Views${cameras.length ? html` (${cameras.length})` : nothing}
+      </button>
+      ${this.viewsOpen
+        ? html`<div class="views" role="group" aria-label="Saved views">
+            ${cameras.length === 0
+              ? html`<p>
+                  Turn the model to an angle you like and save it. A dashboard card can then look
+                  from there.
+                </p>`
+              : cameras.map(
+                  (camera) => html`
+                    <div class="view">
+                      <button class="go" title="Look from here" @click=${() => this.goToView(camera)}>
+                        ${camera.name}
+                      </button>
+                      <button
+                        class="remove"
+                        title="Delete this view"
+                        aria-label="Delete the view ${camera.name}"
+                        @click=${() => this.changeCameras((all) => all.filter((c) => c.id !== camera.id))}
+                      >
+                        ${icon("close")}
+                      </button>
+                    </div>
+                  `,
+                )}
+            <form
+              @submit=${(event: SubmitEvent) => {
+                event.preventDefault();
+                const input = (event.target as HTMLFormElement).querySelector("input")!;
+                if (this.saveView(input.value)) input.value = "";
+              }}
+            >
+              <input
+                type="text"
+                maxlength="60"
+                placeholder="Name this view"
+                aria-label="Name for this view"
+                ?disabled=${full}
+              />
+              <button class="primary" type="submit" ?disabled=${full}>Save</button>
+            </form>
+          </div>`
+        : nothing}
+    `;
+  }
+
+  private sceneView() {
+    return this.renderRoot.querySelector("diorama-scene-view");
+  }
+
+  private goToView(camera: Camera): void {
+    this.sceneView()?.goTo(camera);
+  }
+
+  /** Save where the camera is now under a name. Returns false if it could not. */
+  private saveView(name: string): boolean {
+    const at = this.sceneView()?.currentCamera();
+    const trimmed = name.trim();
+    if (!at || !trimmed || !this.floorId) return false;
+    this.changeCameras((all) => [
+      ...all,
+      { id: newId("c"), name: trimmed, floor: this.floorId!, ...at },
+    ]);
+    return true;
+  }
+
+  private changeCameras(change: (cameras: Camera[]) => Camera[]): void {
+    if (!this.house) return;
+    this.dispatchEvent(
+      new CustomEvent("cameras-change", { detail: { cameras: change(this.house.cameras) } }),
+    );
   }
 
   private renderTools(): TemplateResult {
@@ -989,6 +1089,100 @@ export class DioramaEditor extends LitElement {
       diorama-device-drawer {
         flex: 1;
         min-width: 0;
+      }
+      .views-button {
+        position: absolute;
+        right: 126px;
+        bottom: 16px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 12px 0 8px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 10px;
+        background: var(--card-background-color, #fff);
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      }
+      .views {
+        position: absolute;
+        right: 16px;
+        bottom: 60px;
+        box-sizing: border-box;
+        width: 280px;
+        max-width: calc(100% - 32px);
+        max-height: calc(100% - 150px);
+        overflow-y: auto;
+        padding: 12px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 14px;
+        background: var(--card-background-color, #fff);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+      }
+      .views p {
+        margin: 0 4px 10px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--diorama-text-muted);
+      }
+      .view {
+        display: flex;
+        align-items: center;
+      }
+      .view .go {
+        flex: 1;
+        min-width: 0;
+        height: 36px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .view .remove {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        background: none;
+        color: var(--diorama-text-muted);
+        cursor: pointer;
+      }
+      .view button:hover {
+        background: color-mix(in srgb, var(--diorama-text) 8%, transparent);
+      }
+      .views form {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .views input {
+        flex: 1;
+        min-width: 0;
+        box-sizing: border-box;
+        height: 38px;
+        padding: 0 10px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
+        border-radius: 10px;
+        background: var(--primary-background-color, #fafafa);
+        color: inherit;
+        font: inherit;
+      }
+      .views button.primary {
+        padding: 0 14px;
       }
       .choice {
         position: absolute;

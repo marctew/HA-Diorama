@@ -2,7 +2,7 @@ import { css, html, LitElement, nothing, type PropertyValues, type TemplateResul
 import { customElement, property, state } from "lit/decorators.js";
 import { aspectRatioValue, type CardConfig } from "../core/card-config";
 import type { Floor, House } from "../core/scene";
-import { resolveView, type ViewResult } from "../core/views";
+import { cameraFor, resolveView, type ViewResult } from "../core/views";
 import { roomIllustration } from "../shared/illustration";
 import { navigate } from "../shared/navigate";
 import { SceneController } from "../shared/scene-controller";
@@ -22,6 +22,8 @@ export class DioramaCardView extends LitElement {
 
   private readonly scene = new SceneController(this);
   private view: ViewResult = { status: "loading" };
+  /** The saved view the card looks from, worked out with `view`. */
+  private camera?: ReturnType<typeof cameraFor>;
   /** What `view` was worked out from, to do it again only when one changes. */
   private viewFrom: [House?, ReadonlyMap<string, Floor>?, CardConfig?] = [];
   private sceneLoading = false;
@@ -34,6 +36,10 @@ export class DioramaCardView extends LitElement {
     if (house !== fromHouse || floors !== fromFloors || this.config !== fromConfig) {
       this.viewFrom = [house, floors, this.config];
       this.view = house && this.config ? resolveView(house, floors, this.config) : { status: "loading" };
+      this.camera =
+        house && this.config && this.view.status === "ready"
+          ? cameraFor(house, this.view.floors, this.config.camera)
+          : undefined;
     }
     if (this.view.status === "ready" && !this.sceneLoaded && !this.sceneFailed) void this.loadScene();
   }
@@ -82,6 +88,7 @@ export class DioramaCardView extends LitElement {
     if (view.status === "loading" || !this.sceneLoaded) return html`<p class="loading">Loading...</p>`;
     return html`<diorama-scene-view
       .floors=${view.floors}
+      .camera=${this.camera}
       .catalogue=${this.scene.catalogue}
       .hass=${this.hass}
       .walls=${config.walls}

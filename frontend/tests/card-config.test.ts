@@ -22,6 +22,7 @@ describe("parseCardConfig", () => {
       day_night: false,
       aspect_ratio: "4:3",
       walls: "low",
+      floor_gap: 2.5,
     });
     expect(config).toEqual({
       view: "room",
@@ -33,6 +34,7 @@ describe("parseCardConfig", () => {
       day_night: false,
       aspect_ratio: "4:3",
       walls: "low",
+      floor_gap: 2.5,
     });
   });
 
@@ -62,6 +64,8 @@ describe("parseCardConfig", () => {
     [{ aspect_ratio: "wide" }, "aspect_ratio must look like"],
     [{ aspect_ratio: "16:0" }, "aspect_ratio must look like"],
     [{ walls: "glass" }, "walls must be one of"],
+    [{ floor_gap: -1 }, "floor_gap must be"],
+    [{ floor_gap: "wide" }, "floor_gap must be"],
   ])("rejects %j", (raw, message) => {
     expect(() => parseCardConfig(raw)).toThrow(message);
   });
@@ -94,6 +98,12 @@ describe("tidyCardConfig", () => {
       aspect_ratio: "1:1",
       walls: "low",
     });
+  });
+
+  it("keeps the gap between floors only for the house view", () => {
+    expect(tidyCardConfig({ view: "house", floor_gap: 2.5 })).toMatchObject({ floor_gap: 2.5 });
+    expect(tidyCardConfig({ view: "floor", floor: "f1", floor_gap: 2.5 })).not.toHaveProperty("floor_gap");
+    expect(tidyCardConfig({ view: "house", floor_gap: 0 })).not.toHaveProperty("floor_gap");
   });
 
   it("refuses what the card would refuse", () => {

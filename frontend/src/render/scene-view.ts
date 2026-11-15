@@ -26,6 +26,11 @@ export class DioramaSceneView extends LitElement {
   @property() walls: WallMode = "auto";
   /** Whether dragging and scrolling move the camera. A property, as above. */
   @property({ attribute: false }) controls = true;
+  /** A saved view to look from. Without one, the house is framed. */
+  @property({ attribute: false }) camera?: {
+    position: readonly number[];
+    target: readonly number[];
+  };
   /** Hide the button that frames the house again. */
   @property({ type: Boolean, attribute: "no-reset" }) noReset = false;
 
@@ -70,9 +75,20 @@ export class DioramaSceneView extends LitElement {
     this.renderer?.setActive(this.visible);
   };
 
-  /** Point the camera at the whole house again. */
+  /** Point the camera at the whole house again, or at the saved view. */
   frame(): void {
-    this.renderer?.frame();
+    if (this.camera) this.renderer?.setCamera(this.camera.position, this.camera.target);
+    else this.renderer?.frame();
+  }
+
+  /** Where the camera is now, to save as a view. */
+  currentCamera(): { position: [number, number, number]; target: [number, number, number] } | undefined {
+    return this.renderer?.getCamera();
+  }
+
+  /** Look from a saved view. */
+  goTo(camera: { position: readonly number[]; target: readonly number[] }): void {
+    this.renderer?.setCamera(camera.position, camera.target);
   }
 
   protected override render(): TemplateResult {
@@ -115,8 +131,10 @@ export class DioramaSceneView extends LitElement {
       this.resize();
       this.show();
       this.showStates();
+      if (this.camera) this.renderer.setCamera(this.camera.position, this.camera.target);
       return;
     }
+    if (changed.has("camera")) this.frame();
     if (changed.has("walls")) this.renderer.setWallMode(this.walls);
     if (changed.has("controls")) this.renderer.setControlsEnabled(this.controls);
     if (changed.has("floors") || changed.has("hass")) this.showStates();

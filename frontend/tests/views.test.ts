@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { addWall } from "../src/core/plan";
 import type { Floor, House } from "../src/core/scene";
-import { floorsNeeded, resolveView, roomOnly } from "../src/core/views";
+import { cameraFor, camerasFor, floorsNeeded, resolveView, roomOnly } from "../src/core/views";
 import { assertConsistent, counter, draw, emptyFloor, p, rectangle } from "./helpers";
 
 function twoRooms(id = "f1"): Floor {
@@ -155,5 +155,62 @@ describe("resolveView", () => {
     expect(resolveView(home, both, { view: "room", floor: "f1", room: "gone" })).toEqual({ status: "missing", what: "room" });
     expect(resolveView(home, both, { view: "room", room: "gone" })).toEqual({ status: "missing", what: "room" });
     expect(resolveView(home, both, { view: "room", floor: "gone", room: "r1" })).toEqual({ status: "missing", what: "room" });
+  });
+});
+
+describe("the house view with its floors spaced apart", () => {
+  it("lifts each floor by a gap more than the one below", () => {
+    const home = house({ id: "f2", name: "Up", elevation: 2.7 }, { id: "f1", name: "Ground" }, { id: "f3", name: "Loft", elevation: 5.4 });
+    const loaded = new Map([["f1", twoRooms("f1")], ["f2", twoRooms("f2")], ["f3", twoRooms("f3")]]);
+    const result = resolveView(home, loaded, { view: "house", floor_gap: 2 });
+    if (result.status !== "ready") throw new Error("not ready");
+    // In the order the house lists them, each at its own height.
+    expect(result.floors.map((entry) => [entry.floor.id, entry.elevation])).toEqual([
+      ["f2", 4.7],
+      ["f1", 0],
+      ["f3", 9.4],
+    ]);
+  });
+
+  it("ignores the gap for a single floor", () => {
+    const home = house({ id: "f1", name: "Ground" });
+    const result = resolveView(home, new Map([["f1", twoRooms("f1")]]), { view: "floor", floor: "f1", floor_gap: 2 });
+    expect(result).toMatchObject({ status: "ready", floors: [{ elevation: 0 }] });
+  });
+});
+
+describe("saved camera views", () => {
+  const cameras = [
+    { id: "c1", name: "Everything", floor: null, position: [10, 8, 10] as [number, number, number], target: [4, 1, 2] as [number, number, number] },
+    { id: "c2", name: "Landing", floor: "f2", position: [3, 2, 3] as [number, number, number], target: [1, 1, 1] as [number, number, number] },
+  ];
+  const shown = [
+    { floor: twoRooms("f1"), elevation: 0 },
+    { floor: twoRooms("f2"), elevation: 4.7 },
+  ];
+
+  it("uses a view saved on no floor as it is", () => {
+    expect(cameraFor({ cameras }, shown, "c1")).toEqual({ position: [10, 8, 10], target: [4, 1, 2] });
+  });
+
+  it("lifts a view saved on a floor to where that floor is shown", () => {
+    expect(cameraFor({ cameras }, shown, "c2")).toEqual({ position: [3, 6.7, 3], target: [1, 5.7, 1] });
+    // Alone on the ground, it is as it was saved.
+    expect(cameraFor({ cameras }, [{ floor: twoRooms("f2"), elevation: 0 }], "c2")).toEqual({
+      position: [3, 2, 3],
+      target: [1, 1, 1],
+    });
+  });
+
+  it("has nothing for an unknown view, or one whose floor is not shown", () => {
+    expect(cameraFor({ cameras }, shown, "nope")).toBeUndefined();
+    expect(cameraFor({ cameras }, shown, undefined)).toBeUndefined();
+    expect(cameraFor({ cameras }, [shown[0]], "c2")).toBeUndefined();
+  });
+
+  it("offers the views that suit what is shown", () => {
+    expect(camerasFor({ cameras }, { view: "house" }).map((camera) => camera.id)).toEqual(["c1", "c2"]);
+    expect(camerasFor({ cameras }, { view: "floor", floor: "f2" }).map((camera) => camera.id)).toEqual(["c1", "c2"]);
+    expect(camerasFor({ cameras }, { view: "room", floor: "f1", room: "r1" }).map((camera) => camera.id)).toEqual(["c1"]);
   });
 });

@@ -1,8 +1,12 @@
 import { css, html, LitElement, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
-import { DioramaApi, errorMessage } from "../core/api";
+import { DioramaApi, errorMessage, isConflict } from "../core/api";
+import { nextFloor, outerWalls } from "../core/floors";
 import { newId } from "../core/ids";
+import { commit } from "../core/plan";
+import type { Camera, FloorMeta, House, HouseInput } from "../core/scene";
 import "../editor/editor";
+import "../editor/floors-dialog";
 import { icon } from "../editor/icons";
 import { HouseController } from "../shared/house-controller";
 import { roomIllustration } from "../shared/illustration";
@@ -22,6 +26,10 @@ export class DioramaPanel extends LitElement {
   @state() private floorId?: string;
   @state() private adding = false;
   @state() private addError?: string;
+  @state() private floorsOpen = false;
+  /** A change to the house is being saved. */
+  @state() private saving = false;
+  @state() private houseError?: string;
 
   private readonly houseController = new HouseController(this);
 
@@ -61,16 +69,42 @@ export class DioramaPanel extends LitElement {
           : current
             ? html`<span class="floor-name">${current.name}</span>`
             : nothing}
+        ${current && !this.narrow
+          ? html`<button class="text" @click=${() => (this.floorsOpen = true)}>
+              ${icon("layers")} Floors
+            </button>`
+          : nothing}
       </header>
       <main>
         ${current
           ? html`<diorama-editor
               .hass=${this.hass}
               .floorId=${current.id}
+              .house=${house}
               ?narrow=${this.narrow}
+              @cameras-change=${(event: CustomEvent<{ cameras: Camera[] }>) =>
+                this.saveHouse((now) => ({ ...now, cameras: event.detail.cameras }))}
             ></diorama-editor>`
           : this.renderEmpty()}
       </main>
+      ${this.floorsOpen
+        ? html`<diorama-floors-dialog
+            .house=${house}
+            .hass=${this.hass}
+            .error=${this.houseError}
+            ?busy=${this.saving}
+            @floors-close=${() => {
+              this.floorsOpen = false;
+              this.houseError = undefined;
+            }}
+            @floors-change=${(event: CustomEvent<{ floors: FloorMeta[] }>) =>
+              this.saveHouse((now) => ({ ...now, floors: event.detail.floors }))}
+            @floors-add=${(event: CustomEvent<{ copyOutline: boolean }>) =>
+              this.addFloor(event.detail.copyOutline)}
+            @floors-delete=${(event: CustomEvent<{ id: string }>) =>
+              this.deleteFloor(event.detail.id)}
+          ></diorama-floors-dialog>`
+        : nothing}
     `;
   }
 
@@ -100,23 +134,82 @@ export class DioramaPanel extends LitElement {
     `;
   }
 
-  private async addFirstFloor(): Promise<void> {
+  private addFirstFloor(): Promise<void> {
+    return this.addFloor(false);
+  }
+
+  /** Save a change to the house: its floor list, or its saved views. Returns
+   * the house as saved, or undefined if it could not be. */
+  private async saveHouse(change: (house: House) => HouseInput): Promise<House | undefined> {
+    const house = this.houseController.house;
+    if (!this.hass || !house || this.saving) return undefined;
+    this.saving = true;
+    this.houseError = undefined;
+    try {
+      const saved = await new DioramaApi(this.hass).saveHouse(change(house), house.revision);
+      this.houseController.adopt(saved);
+      return saved;
+    } catch (error) {
+      this.houseError = isConflict(error)
+        ? "The house was changed somewhere else. It has been loaded again: please repeat that."
+        : errorMessage(error);
+      void this.houseController.reload();
+      return undefined;
+    } finally {
+      this.saving = false;
+    }
+  }
+
+  /** Add a floor on top of the house, optionally starting from the outside
+   * walls of the floor below it. */
+  private async addFloor(copyOutline: boolean): Promise<void> {
     const house = this.houseController.house;
     if (!this.hass || !house || this.adding) return;
     this.adding = true;
     this.addError = undefined;
+    const api = new DioramaApi(this.hass);
     try {
-      const id = newId("f");
-      await new DioramaApi(this.hass).saveHouse(
-        { settings: house.settings, floors: [...house.floors, { id, name: "Ground floor" }] },
-        house.revision,
+      const top = house.floors.reduce<FloorMeta | undefined>(
+        (highest, floor) => (!highest || floor.elevation > highest.elevation ? floor : highest),
+        undefined,
       );
+      const below = top ? await api.getFloor(top.id) : undefined;
+      const id = newId("f");
+      const saved = await this.saveHouse((now) => ({
+        ...now,
+        floors: [...now.floors, { id, ...nextFloor(now.floors, below?.wall_height) }],
+      }));
+      if (!saved) {
+        this.addError = this.houseError;
+        return;
+      }
+      if (copyOutline && below) {
+        const outline = outerWalls(below);
+        if (outline.walls.length > 0) {
+          const fresh = await api.getFloor(id);
+          await api.saveFloor(commit({ ...fresh, ...outline, wall_height: below.wall_height }));
+        }
+      }
       this.floorId = id;
-      // The house controller hears about the save and loads the new list.
     } catch (error) {
       this.addError = errorMessage(error);
+      this.houseError = this.addError;
     } finally {
       this.adding = false;
+    }
+  }
+
+  private async deleteFloor(id: string): Promise<void> {
+    if (!this.hass || this.saving) return;
+    this.saving = true;
+    this.houseError = undefined;
+    try {
+      this.houseController.adopt(await new DioramaApi(this.hass).deleteFloor(id));
+      if (this.floorId === id) this.floorId = undefined;
+    } catch (error) {
+      this.houseError = errorMessage(error);
+    } finally {
+      this.saving = false;
     }
   }
 
@@ -160,6 +253,21 @@ export class DioramaPanel extends LitElement {
         margin: 0 8px;
         font-size: 20px;
         font-weight: 400;
+      }
+      button.text {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        margin-left: 8px;
+        padding: 0 12px 0 8px;
+        border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-radius: 999px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        cursor: pointer;
       }
       .floor-name {
         margin-left: 4px;

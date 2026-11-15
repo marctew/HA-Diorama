@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed; stages 1 to 7 are built, which is the first alpha: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, furniture, lights and switches bound to the scene, and the dashboard card. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stages 1 to 8 are built: the skeleton, storage and the WebSocket API, the plan editor for walls and rooms, the 3D renderer with its preview in the editor, furniture, lights and switches bound to the scene, the dashboard card, and doors, windows, several floors, tracing over a plan image and saved camera views. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -85,7 +85,7 @@ Setup
 Storage (`store.py`, built)
 
 - `Store` helper, so data lands in `.storage` and is in every backup.
-- `diorama.house`: house settings and the ordered list of floors (ids, names, elevation, `ha_floor_id`).
+- `diorama.house`: house settings, the ordered list of floors (ids, names, elevation, `ha_floor_id`) and the saved camera views (id, name, the floor it was saved on, position and target).
 - `diorama.floor.<id>`: one file per floor, holding everything on that floor (section 5). A floor that is listed but has never been saved has no file and reads as empty.
 - Every document has `schema_version` and a `revision` that goes up by one with each save. Both are set by the server; a client can send them back and they are ignored. Format changes later go through the Store's migrate hook.
 - Uploaded models and trace images live in `<config>/diorama/`, outside `custom_components`, because a Marketplace update replaces the whole integration folder.
@@ -107,7 +107,9 @@ WebSocket commands (`websocket_api.py`, built)
 
 Errors use Home Assistant's `{code, message}`: `invalid_format` with the path of the problem (`walls.0.b: there is no vertex 'v9'`), `conflict` when `revision` is not the current one (nothing is saved; the client reloads), `not_found` for an unknown floor, `unauthorized` for a non-admin, `invalid_stored_data` when a stored floor fails validation.
 
-HTTP (not built; uploads come with the trace image in stage 8 and model upload in stage 10)
+HTTP (`http.py`): plan images are built; model upload comes in stage 10
+
+- `POST /api/diorama/trace` (admin): the body is a PNG, JPEG or WebP image, recognised by its first bytes and not by any name or type the client gives, at most 10 MB. It is stored in `<config>/diorama/trace/` under a generated id, which is returned. `GET /api/diorama/trace/<id>` serves it to any signed-in user; `DELETE` (admin) removes it. An image a floor no longer uses is not cleaned up yet.
 
 - `POST /api/diorama/models` (admin, authenticated): upload a `.glb`. Check the glTF binary magic bytes, cap size at 10 MB, store under a generated id, never use the uploaded filename as a path.
 - `DELETE /api/diorama/models/<id>` (admin).
@@ -163,6 +165,10 @@ Built (stage 3)
 - Each piece records the room it stands in, and that follows when it is moved or the walls around it change. The inspector shows its position, rotation, size and room.
 - Device tool (`B`; not `D`, which Home Assistant uses): a drawer docked beside the plan listing the lights and switches that can be placed, first those in the areas the floor's rooms are linked to, under each room's name with the ones not yet placed first, then the rest behind "show from other areas". Pick one and click where it is. Dropped on a lamp, the TV or another piece of furniture of the right kind, it attaches to it and goes where that goes; dropped on the floor, a light gets a ceiling light and a switch a marker at switch height. An entity goes on a floor once.
 - Fixtures show in the plan as round badges coloured by their live state. They are selected, dragged (which takes one off its furniture), box-selected and deleted like everything else. The inspector shows the entity, its state now, what a tap does (switch, show details, nothing), its height if it is a marker, and can detach it from its furniture.
+- Door and window tool (`O`): choose which, then click a wall; a preview shows where it will go. In the select tool an opening slides along its wall or onto another by dragging, and the inspector sets its kind, width, height, sill and distance from the wall's end. Openings stay within their wall when it is shortened, move to the right half when it is split, and go with it when it is deleted.
+- Tracing: with nothing selected, the inspector takes a plan image, which is shown under the drawing. "Set the scale" asks for two clicks on the image and the real distance between them; the first point stays put. Its strength is a slider.
+- Floors (the Floors button in the header): name, height of its floor, the Home Assistant floor it corresponds to, order, delete (a second click confirms, since everything on it goes), and add. A new floor goes on top at the height of the walls below plus 0.3 m, and can start from the outside walls of the floor below. A picker in the header switches floor; unsaved edits to the floor you leave are kept as a draft.
+- Saved views (the Views button on the 3D pane): turn the model, name the view, and a card can look from there. A view remembers the floor it was saved on.
 - Undo and redo (200 steps), Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y.
 - Saving: explicit Save (Ctrl+S) with a status. Unsaved edits are written to `localStorage` as a draft as you go and offered back after a reload or crash. If the floor is saved elsewhere meanwhile, the editor reloads when there is nothing unsaved, and otherwise offers "load their version" or "save mine over it". Leaving the page with unsaved edits asks first.
 - Lengths and areas follow Home Assistant's unit system, for display and for typed input.
@@ -170,10 +176,8 @@ Built (stage 3)
 
 Still to come
 
-- Door/window: click a wall, drag along it, edit width/height/sill in the inspector (stage 8).
 - Placing furniture by dragging it out of the drawer, and into the 3D view. For now: pick, then click in the plan.
-- Trace: upload a plan image, click two points and enter the real distance to set scale (stage 8).
-- Floors: add, rename, reorder, set elevation, link to a Home Assistant floor, "copy outer walls from floor below" (stage 8). Until then the panel creates one "Ground floor" and shows a plain picker if the house has more.
+- Moving the plan image by dragging it (its scale and first point can be set, not its position by hand), ghosted outlines of the floor below while drawing, stairwell cut-outs.
 
 ## 7. Renderer
 
@@ -192,8 +196,8 @@ Still to come
 
 Still to come
 
-- Cut-outs for doors and windows (stage 8).
-- Exploded spacing between floors in the house view, ghosted neighbours in the room view, saved camera presets per view, smooth transitions, double-tap a room to focus it (stage 8).
+- Doors and windows are cut out of both faces of their wall, with the sides of the hole filled in; a window gets a see-through pane. A door is an open doorway for now (stage 9 binds it to a sensor).
+- Ghosted neighbours in the room view, smooth camera transitions, double-tap a room to focus it. In the house view an upper floor still hides most of the one below; spacing the floors apart helps, but hiding upper floors on demand would be better.
 - Day and night: ambient level and sun angle follow `sun.sun`; can be turned off (stage 9).
 
 ## 8. Entity bindings
@@ -230,7 +234,8 @@ interactive: true     # false = display only, taps ignored
 controls: true        # orbit/zoom gestures; false locks the camera
 walls: auto           # auto | full | low
 aspect_ratio: "16:9"
-camera: default       # accepted, not used yet (stage 8)
+camera: c_ab12cd34    # the id of a saved view; the editor offers them by name
+floor_gap: 2.5        # house view: metres of extra space between floors
 day_night: true       # accepted, not used yet (stage 9)
 ```
 
@@ -241,12 +246,13 @@ Built (stage 7)
 - Lights and switches are live and work as in the editor's preview: tap toggles, hold opens the details. `interactive: false` makes it display only.
 - Visual config editor (`card/card-editor.ts`), returned from `getConfigElement`: what to show, floor, room, shape, walls, and the two toggles. It stores only what differs from the defaults. `getStubConfig` returns the whole house. Registered in `window.customCards` with a preview.
 - Sizes itself by `aspect_ratio`: `rows: "auto"` in the sections view (`getGridOptions`), a matching `getCardSize` for masonry.
+- `camera` looks from a saved view, lifted to wherever its floor is shown; without one, or if the view has been deleted, the house is framed. `floor_gap` spaces the floors of the house view apart.
 - Empty states: no house drawn yet (with a link to the panel for admins), the room or floor is no longer there, the 3D view could not be loaded or WebGL is unavailable.
 - Card chrome follows Home Assistant's theme through `ha-card`; the scene's background is transparent.
 
 Not done
 
-- Camera presets (`camera`), day and night (`day_night`), the user's reduced-motion setting.
+- Day and night (`day_night`), the user's reduced-motion setting.
 - The card reads `hass` rather than subscribing to the `states` context. It costs almost nothing, because fixture states are only recomputed when an entity on the floor has changed (section 8).
 
 ## 10. Furniture catalogue
@@ -333,6 +339,8 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 - In a `css` tagged template an escape such as `\33 d` (a class starting with a digit) is an invalid escape: the whole stylesheet silently becomes `undefined` and the element fails to render. Typecheck, lint and tests do not catch it. Avoid class names that need escaping.
 - Home Assistant has single-key shortcuts of its own that work on any page, including a custom panel: `e`, `c`, `d`, `m` and `a` open its search and assistant. Pressing `D` for the device tool opened Home Assistant's device search over the editor. Keep Diorama's own keys off those letters.
 - `hass.entities` (the entity registry as the frontend has it) carries `area_id`, `device_id` and `hidden` among others, and firing `hass-more-info` with `{entityId}` from inside the panel opens the details dialog: both checked in a running instance.
+- Home Assistant's own request filter turns away a path with `..` in it (400) before a view sees it; the id check in `http.py` is still there for everything else.
+- Keyboard handling skips keys typed into fields, which at first included Ctrl+S: with a slider focused, saving did nothing. Ctrl+S is handled before that check.
 - Home Assistant gives a custom panel no height: `height: 100%` on the panel element collapses to its content. The panel sets `100dvh` itself.
 - Credentials added with `hass --script auth add` become an administrator on first sign-in. To test as a non-admin, create the user through Home Assistant with the `system-users` group.
 

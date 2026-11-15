@@ -24,6 +24,19 @@ export class HouseController implements ReactiveController {
     if (hass && this.connected && !this.started) void this.start();
   }
 
+  /** Take a house that has just come back from a save, without waiting to be
+   * told about it. */
+  adopt(house: House): void {
+    this.house = house;
+    this.error = undefined;
+    this.host.requestUpdate();
+  }
+
+  /** Fetch the house again. */
+  reload(): Promise<void> {
+    return this.load();
+  }
+
   hostConnected(): void {
     this.connected = true;
     if (this.hass && !this.started) void this.start();

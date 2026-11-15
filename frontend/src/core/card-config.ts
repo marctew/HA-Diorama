@@ -18,6 +18,8 @@ export interface CardConfig {
   aspect_ratio: string;
   /** Whether walls on the camera's side drop out of the way. */
   walls: WallMode;
+  /** Extra space between floors in the house view, in metres. */
+  floor_gap: number;
 }
 
 export const VIEWS: readonly CardView[] = ["house", "floor", "room"];
@@ -32,6 +34,7 @@ export const DEFAULT_CARD_CONFIG: CardConfig = {
   day_night: true,
   aspect_ratio: "16:9",
   walls: "auto",
+  floor_gap: 0,
 };
 
 /** Check a raw card configuration and fill in the defaults. Throws an Error
@@ -52,9 +55,15 @@ export function parseCardConfig(raw: unknown): CardConfig {
     throw new Error(`walls must be one of: ${WALL_MODES.join(", ")}.`);
   }
 
+  const gap = input.floor_gap ?? DEFAULT_CARD_CONFIG.floor_gap;
+  if (typeof gap !== "number" || !Number.isFinite(gap) || gap < 0 || gap > 20) {
+    throw new Error("floor_gap must be a number of metres from 0 to 20.");
+  }
+
   const config: CardConfig = {
     view: view as CardView,
     walls: walls as WallMode,
+    floor_gap: gap,
     camera: optionalString(input, "camera") ?? DEFAULT_CARD_CONFIG.camera,
     interactive: optionalBoolean(input, "interactive") ?? DEFAULT_CARD_CONFIG.interactive,
     controls: optionalBoolean(input, "controls") ?? DEFAULT_CARD_CONFIG.controls,
@@ -116,5 +125,7 @@ export function tidyCardConfig(raw: Record<string, unknown>): Record<string, unk
   for (const key of ["camera", "interactive", "controls", "day_night", "aspect_ratio", "walls"] as const) {
     if (config[key] !== DEFAULT_CARD_CONFIG[key]) tidy[key] = config[key];
   }
+  // Only the house view has floors to space apart.
+  if (config.view === "house" && config.floor_gap > 0) tidy.floor_gap = config.floor_gap;
   return tidy;
 }

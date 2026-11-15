@@ -268,6 +268,33 @@ export class SceneRenderer {
     this.requestRender();
   }
 
+  /** Where the camera is and what it looks at. */
+  getCamera(): { position: [number, number, number]; target: [number, number, number] } {
+    const round = (value: number) => Number(value.toFixed(3));
+    const position = this.camera.position;
+    const target = this.controls.target;
+    return {
+      position: [round(position.x), round(position.y), round(position.z)],
+      target: [round(target.x), round(target.y), round(target.z)],
+    };
+  }
+
+  /** Put the camera somewhere, as if someone had moved it there: it stays
+   * until it is moved again or `frame` is called. */
+  setCamera(position: readonly number[], target: readonly number[]): void {
+    this.controls.target.set(target[0], target[1], target[2]);
+    this.camera.position.set(position[0], position[1], position[2]);
+    this.cameraMoved = true;
+    this.limitZoom();
+    // A saved view may be further out than the zoom limit for this house.
+    this.controls.maxDistance = Math.max(
+      this.controls.maxDistance,
+      this.camera.position.distanceTo(this.controls.target) * 1.5,
+    );
+    this.controls.update();
+    this.requestRender();
+  }
+
   /** Point the camera at the whole house from the default angle. */
   frame(): void {
     this.cameraMoved = false;
