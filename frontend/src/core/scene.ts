@@ -76,6 +76,9 @@ export interface Opening {
   style: "hinged" | "sliding";
   /** Doors: made of glass. */
   glazed: boolean;
+  /** Doors with no sensor: drawn shut (true) or open (false). Null leaves
+   * it to the kind of door: a swinging one open, a sliding one shut. */
+  closed: boolean | null;
 }
 
 export interface Room {
@@ -87,6 +90,9 @@ export interface Room {
   wall_colour: string;
   /** No floor here: a stairwell, a gallery, a double-height room. */
   open: boolean;
+  /** The thermostat or sensor whose temperature is this room's: shown
+   * across its floor. */
+  temperature_entity: string | null;
 }
 
 export interface Item {

@@ -213,6 +213,7 @@ describe("detectRooms", () => {
       floor_style: "default",
       wall_colour: "#e8e4dc",
       open: false,
+      temperature_entity: null,
     });
   });
 

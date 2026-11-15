@@ -97,4 +97,5 @@ export const DOOR_DEFAULTS = {
   swing: 1 as const,
   style: "hinged" as const,
   glazed: false,
+  closed: null,
 };

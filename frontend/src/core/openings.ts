@@ -90,6 +90,7 @@ export function openingAt(
     swing: 1,
     style: "hinged",
     glazed: false,
+    closed: null,
   };
 }
 
@@ -207,6 +208,14 @@ export function openingEnds(
     end: at(opening.offset + opening.width),
     thickness: wall.thickness,
   };
+}
+
+/** How far open a door stands when no sensor says: 1 for open, 0 for shut.
+ * Unless it has been said, a swinging door stands open, so that the rooms
+ * join up, and a sliding one shut, as glass hides nothing. */
+export function doorRest(opening: Pick<Opening, "closed"> & { style?: Opening["style"] }): 0 | 1 {
+  const shut = opening.closed ?? opening.style === "sliding";
+  return shut ? 0 : 1;
 }
 
 /** One leaf of a door: where along the wall it is hinged, how wide it is,

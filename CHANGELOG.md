@@ -9,6 +9,9 @@ The notes of each release are what Home Assistant shows on Diorama's update. Any
 - Copying a lamp, a panel or anything else that is a light copies its light with it, so a wall of panels is one light.
 - A model you add can be said to be a light, something switched, or a television or speaker. A device dropped on it then becomes it.
 - Several different lights on in one room no longer white its floor out.
+- Televisions, monitors and the screens of the sim rig light up while the media player, plug or light they are bound to is on.
+- A room can be given a thermostat or temperature sensor: its reading is written on the floor and the room takes its colour.
+- A door with no sensor can be set to stand shut instead of open.
 
 ## 0.3.0
 

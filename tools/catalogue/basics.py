@@ -48,6 +48,14 @@ class Model:
     strip: bool = field(default=False)
     # The whole of it lights up in the colour of its light: a light panel.
     lit: bool = field(default=False)
+    # Its screens, which light up when what it is bound to is on. Each is the
+    # middle of the picture (across, up, front), its width and height, and
+    # how far it is turned from facing the front, in degrees.
+    screens: tuple[tuple[float, float, float, float, float, float], ...] = ()
+    # For a model whose shape is not known until it is built: one screen on
+    # its front face, as fractions of the box it fills (across from the
+    # middle, up, width, height).
+    screen_on_front: tuple[float, float, float, float] | None = None
 
 
 def _sofa(mesh: Mesh, width: float, fabric: str) -> None:
@@ -334,6 +342,31 @@ def _sim_rig(mesh: Mesh, screens: int) -> None:
         screen(reach, 0.62 - back, 50)
 
 
+def _rig_screens(
+    count: int,
+) -> tuple[tuple[float, float, float, float, float, float], ...]:
+    """Where the pictures of a rig's screens are, facing the driver."""
+    wide, tall = 0.74, 0.42
+
+    def picture(x: float, z: float, turn: float) -> tuple[float, ...]:
+        angle = math.radians(turn)
+        return (
+            round(x - 0.023 * math.sin(angle), 4),
+            round(0.735 + (tall - 0.03) / 2, 4),
+            round(z - 0.023 * math.cos(angle), 4),
+            wide - 0.03,
+            tall - 0.03,
+            turn + 180,
+        )
+
+    middle = [picture(0, 0.62, 0)]
+    if count == 3:
+        reach = wide / 2 + (wide / 2) * math.cos(math.radians(50))
+        back = (wide / 2) * math.sin(math.radians(50))
+        middle += [picture(-reach, 0.62 - back, -50), picture(reach, 0.62 - back, 50)]
+    return tuple(middle)
+
+
 def sim_rig(mesh: Mesh) -> None:
     _sim_rig(mesh, 1)
 
@@ -595,6 +628,7 @@ MODELS: tuple[Model, ...] = (
         kind="media",
         against_wall=True,
         surface=True,
+        screens=((0, 0.93, 0.037, 1.18, 0.66, 0),),
     ),
     Model(
         "bookcase",
@@ -795,6 +829,8 @@ MODELS: tuple[Model, ...] = (
         against_wall=True,
         surface=True,
         surface_height=0.74,
+        kind="media",
+        screens=((-0.2, 1.0, -0.153, 0.48, 0.28, 0),),
     ),
     Model("office_chair", "Office chair", "Office", office_chair, ("seat", "swivel")),
     Model("bath", "Bath", "Bathroom", bath, ("tub",), against_wall=True),
@@ -864,6 +900,8 @@ MODELS: tuple[Model, ...] = (
         "Workshop and games",
         sim_rig,
         ("racing", "simulator", "wheel", "cockpit", "gaming"),
+        kind="media",
+        screens=_rig_screens(1),
     ),
     Model(
         "sim_rig_triple",
@@ -871,5 +909,7 @@ MODELS: tuple[Model, ...] = (
         "Workshop and games",
         sim_rig_triple,
         ("racing", "simulator", "wheel", "cockpit", "gaming", "triple"),
+        kind="media",
+        screens=_rig_screens(3),
     ),
 )

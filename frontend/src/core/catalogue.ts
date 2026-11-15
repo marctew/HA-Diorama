@@ -43,6 +43,20 @@ export interface CatalogueModel {
   strip?: boolean;
   /** The whole of it lights up in the colour of its light: a light panel. */
   lit?: boolean;
+  /** Its screens, which light up when the device it is bound to is on. */
+  screens?: ModelScreen[];
+}
+
+/** A screen on a model: the middle of the picture in the model's own space
+ * (across, up, front), its size, and how far it is turned from facing the
+ * front, in degrees. */
+export interface ModelScreen {
+  x: number;
+  y: number;
+  z: number;
+  width: number;
+  height: number;
+  turn: number;
 }
 
 export interface CatalogueSource {

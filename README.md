@@ -40,11 +40,12 @@ An update to Diorama needs a restart of Home Assistant; the first install does n
 | `B` | Devices: pick one, then click where it is. |
 | `V` | Select, move and delete. |
 
-- Select a room to name it, choose its floor and wall colour, and link it to a Home Assistant area. Its devices are then listed first.
+- Select a room to name it, choose its floor and wall colour, and link it to a Home Assistant area. Its devices are then listed first. **Temperature from** takes a thermostat or sensor: the reading is written on the room's floor, which turns from blue to red with it.
+- A television, a monitor or the sim rig lights its screen while the device dropped on it is on: a media player, or the plug it runs from.
 - A device dropped on furniture that suits it becomes that piece: a light on a lamp, a media player on the TV, a thermostat on the radiator.
 - A door or window takes a sensor or a blind of its own: select it and choose one. A door with a sensor swings open and shut; one without stands open. A window with a blind shows how far down it is.
 - A device can go on the plan as many times as it has fittings. For downlights, place the light, choose **Shown as: Downlight** on the right, then **Fill the room** with as many rows and columns as you have. For under-cabinet lighting, take the **LED strip** from the furniture list, drop it on a wall unit (it fixes itself underneath), stretch it along the run, then drop the light on it.
-- Select a door to give it two leaves, make it slide, make it glass, hang it from the other side or open it the other way. Drag either end of a door or window to change its width.
+- Select a door to give it two leaves, make it slide, make it glass, hang it from the other side or open it the other way, and to say whether it stands open or shut when it has no sensor. Drag either end of a door or window to change its width.
 - Select a piece of furniture and drag its handles to stretch it, or type its size on the right. Small things (lamps, a microwave, a laptop) stand on whatever table or unit you drop them on, and go with it when it moves. **Off the floor** puts anything at a height: a wall unit, a mirror, a picture.
 - Stairs open the floor above them, and show coming up through it. For a stairwell of another shape, a gallery or a double-height room, select the room upstairs and tick **Open to the floor below**.
 - With nothing selected, the panel on the right takes a floor plan image to trace over. **Set the scale** sizes it from two points you know the distance between, and **Move it** lets you drag it into place.

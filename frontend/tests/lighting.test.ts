@@ -3,8 +3,13 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findModel, type Catalogue } from "../src/core/catalogue";
 import {
+  allFixtures,
+  canBe,
+  clearSpot,
   fillRoom,
   fittingsSharing,
+  isRoomFixture,
+  roomFixtures,
   fixtureHeight,
   MAX_FILL,
   placeFixture,
@@ -21,7 +26,13 @@ import {
   resizeItem,
   updateItems,
 } from "../src/core/items";
-import { doorLeaves, placeOpening, slidingPanels, updateOpening } from "../src/core/openings";
+import {
+  doorLeaves,
+  doorRest,
+  placeOpening,
+  slidingPanels,
+  updateOpening,
+} from "../src/core/openings";
 import { addWall } from "../src/core/plan";
 import type { Fixture, Floor, Item } from "../src/core/scene";
 import { restack, settleStacks, unitOver } from "../src/core/stacking";
@@ -301,5 +312,105 @@ describe("more lights", () => {
     // A piece with no light is copied as before.
     const plain = placeItem(room(), "basics/chair", p([1, 1]), 0, makeId);
     expect(duplicateItems(plain.floor, new Set([plain.id]), 0.3, makeId).floor.fixtures).toEqual([]);
+  });
+});
+
+describe("doors that stand shut", () => {
+  it("leaves it to the kind of door unless told", () => {
+    expect(doorRest({ closed: null, style: "hinged" })).toBe(1);
+    expect(doorRest({ closed: null, style: "sliding" })).toBe(0);
+    expect(doorRest({ closed: null })).toBe(1);
+  });
+
+  it("does as it is told", () => {
+    expect(doorRest({ closed: true, style: "hinged" })).toBe(0);
+    expect(doorRest({ closed: false, style: "sliding" })).toBe(1);
+  });
+});
+
+describe("the temperature of a room", () => {
+  const withSource = (): Floor => {
+    const floor = room();
+    return { ...floor, rooms: floor.rooms.map((one) => ({ ...one, temperature_entity: "sensor.kitchen_temp" })) };
+  };
+
+  it("is a fixture on the floor in the middle of the room, never stored", () => {
+    const floor = withSource();
+    const [fixture] = roomFixtures(floor);
+    expect(fixture).toMatchObject({
+      id: `room:${floor.rooms[0].id}`,
+      entity_id: "sensor.kitchen_temp",
+      kind: "climate",
+      room: floor.rooms[0].id,
+      z: 0,
+    });
+    expect(fixture.x).toBeGreaterThan(0);
+    expect(fixture.x).toBeLessThan(6);
+    expect(fixture.y).toBeGreaterThan(0);
+    expect(fixture.y).toBeLessThan(4);
+    expect(isRoomFixture(fixture)).toBe(true);
+    expect(floor.fixtures).toEqual([]);
+    expect(allFixtures(floor)).toEqual([fixture]);
+  });
+
+  it("is written in the clearest patch of floor, away from walls and furniture", () => {
+    const empty = clearSpot(room(), room().rooms[0], catalogue)!;
+    // An empty 6 by 4 room: along the middle, two metres from the long walls.
+    expect(empty.point.y).toBeCloseTo(2, 0);
+    expect(empty.clearance).toBeGreaterThan(1.7);
+    // A sofa in the middle pushes it to one side.
+    const withSofa = placeItem(room(), "basics/sofa_3", p([3, 2]), 0, fresh()).floor;
+    const beside = clearSpot(withSofa, withSofa.rooms[0], catalogue)!;
+    expect(Math.abs(beside.point.x - 3)).toBeGreaterThan(1);
+    expect(beside.clearance).toBeLessThan(empty.clearance);
+    // A ceiling light, a wall unit and a rug are not in the way.
+    const makeId = fresh();
+    let cluttered = placeItem(room(), "basics/ceiling_light", p([3, 2]), 0, makeId).floor;
+    cluttered = placeItem(cluttered, "kenney/wall_unit", p([3, 2]), 0, makeId, 1.45).floor;
+    cluttered = placeItem(cluttered, "basics/rug", p([3, 2]), 0, makeId).floor;
+    expect(clearSpot(cluttered, cluttered.rooms[0], catalogue)).toEqual(empty);
+    expect(clearSpot(room(), { boundary: ["nope"] }, catalogue)).toBeUndefined();
+  });
+
+  it("is nothing for a room with no source", () => {
+    expect(roomFixtures(room())).toEqual([]);
+    const plain = room();
+    // Nothing to add: the very same list.
+    expect(allFixtures(plain)).toBe(plain.fixtures);
+    expect(isRoomFixture({ id: "x_abc" })).toBe(false);
+  });
+});
+
+describe("screens", () => {
+  it("says where the picture is on a television, a monitor and a rig", () => {
+    for (const id of ["basics/tv_unit", "basics/desk", "basics/sim_rig", "kenney/tv", "kenney/monitor"]) {
+      const one = model(id);
+      expect(one.screens?.length, id).toBeGreaterThanOrEqual(1);
+      for (const screen of one.screens!) {
+        expect(screen.width, id).toBeLessThanOrEqual(one.width + 0.01);
+        expect(screen.y + screen.height / 2, id).toBeLessThanOrEqual(one.height + 0.01);
+        expect(screen.y - screen.height / 2, id).toBeGreaterThanOrEqual(0);
+      }
+    }
+    expect(model("basics/sim_rig_triple").screens).toHaveLength(3);
+    // A rig's screens face the driver, who faces the front.
+    expect(model("basics/sim_rig").screens![0].turn).toBe(180);
+    expect(model("basics/sofa_2").screens).toBeUndefined();
+  });
+
+  it("lets a television be a media player, or the plug it is on, but not a thermostat", () => {
+    const tv = model("kenney/tv");
+    expect(canBe(tv, "media")).toBe(true);
+    expect(canBe(tv, "switch")).toBe(true);
+    expect(canBe(tv, "light")).toBe(true);
+    expect(canBe(tv, "climate")).toBe(false);
+    // A lamp is a light and nothing else.
+    const lamp = model("basics/floor_lamp");
+    expect(canBe(lamp, "light")).toBe(true);
+    expect(canBe(lamp, "switch")).toBe(false);
+    const makeId = fresh();
+    const placed = placeItem(room(), "basics/sim_rig", p([3, 2]), 0, makeId);
+    const bound = placeFixture(placed.floor, catalogue, "switch.rig_screen", "switch", p([3, 2]), makeId);
+    expect(bound.floor.fixtures[0].item).toBe(placed.id);
   });
 });

@@ -4,8 +4,8 @@
 // that goes. Like plan.ts, every function returns a new floor.
 
 import { kindForEntity } from "./bindings";
-import { findModel, type Catalogue } from "./catalogue";
-import { pointInPolygon, type Point } from "./geometry";
+import { findModel, type Catalogue, type CatalogueModel } from "./catalogue";
+import { interiorPoint, pointInPolygon, type Point } from "./geometry";
 import { newId, type MakeId } from "./ids";
 import { itemFootprint, itemScale, pickFootprint, roomAt } from "./items";
 import type { Fixture, FixtureKind, Floor, Item } from "./scene";
@@ -17,6 +17,13 @@ export const DEFAULT_MODEL: Readonly<Partial<Record<FixtureKind, string>>> = {
 
 /** How high a fixture with no model sits: light-switch height. */
 export const MARKER_HEIGHT = 1.2;
+
+/** Whether a model can stand for a fixture of a kind: a lamp for a light.
+ * Anything with a screen can also be a switch (the plug it is on) or a light. */
+export function canBe(model: CatalogueModel, kind: FixtureKind): boolean {
+  if (model.kind === kind) return true;
+  return (model.screens?.length ?? 0) > 0 && (kind === "switch" || kind === "media" || kind === "light");
+}
 
 /** The piece of furniture under a point that can stand for a fixture of this
  * kind (a lamp for a light), if it is not already taken. */
@@ -30,7 +37,11 @@ export function itemToBind(
   return floor.items.find((item) => {
     if (taken.has(item.id)) return false;
     const model = findModel(catalogue, item.model);
-    return model?.kind === kind && pointInPolygon(point, pickFootprint(item, model));
+    return (
+      model !== undefined &&
+      canBe(model, kind) &&
+      pointInPolygon(point, pickFootprint(item, model))
+    );
   });
 }
 
@@ -244,9 +255,45 @@ export function isOpeningFixture(fixture: Pick<Fixture, "id">): boolean {
 
 /** Everything on a floor that stands for an entity: the fixtures placed on
  * it, and the doors and windows that have one. */
-export function allFixtures(floor: Pick<Floor, "vertices" | "walls" | "openings" | "fixtures">): Fixture[] {
-  const openings = openingFixtures(floor, kindForEntity);
-  return openings.length === 0 ? floor.fixtures : [...floor.fixtures, ...openings];
+export function allFixtures(
+  floor: Pick<Floor, "vertices" | "walls" | "openings" | "fixtures" | "rooms">,
+): Fixture[] {
+  const extra = [...openingFixtures(floor, kindForEntity), ...roomFixtures(floor)];
+  return extra.length === 0 ? floor.fixtures : [...floor.fixtures, ...extra];
+}
+
+/** The temperature of a room as a fixture, so that it is kept up to date and
+ * tapped like any other. It lies on the floor in the middle of the room. Its
+ * id starts with "room:" and is not stored. */
+export function roomFixtures(floor: Pick<Floor, "vertices" | "rooms">): Fixture[] {
+  const fixtures: Fixture[] = [];
+  const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
+  for (const room of floor.rooms) {
+    if (!room.temperature_entity) continue;
+    const outline = room.boundary
+      .map((id) => position.get(id))
+      .filter((point) => point !== undefined);
+    if (outline.length < 3) continue;
+    const middle = interiorPoint(outline);
+    fixtures.push({
+      id: `room:${room.id}`,
+      entity_id: room.temperature_entity,
+      kind: "climate",
+      x: round(middle.x),
+      y: round(middle.y),
+      z: 0,
+      room: room.id,
+      item: null,
+      model: null,
+      options: {},
+    });
+  }
+  return fixtures;
+}
+
+/** Whether a fixture stands for the temperature of a room. */
+export function isRoomFixture(fixture: Pick<Fixture, "id">): boolean {
+  return fixture.id.startsWith("room:");
 }
 
 /** The most fittings a room is filled with at once. */
@@ -355,4 +402,53 @@ export function stripLight(
     rotation: item.rotation,
     below: round(below),
   };
+}
+
+/** The emptiest spot of a room's floor, to write its temperature on: as far
+ * as can be from its walls and from the furniture standing in it. Things up
+ * on a wall or the ceiling are not in the way. */
+export function clearSpot(
+  floor: Pick<Floor, "vertices" | "items">,
+  room: Pick<Floor["rooms"][number], "boundary">,
+  catalogue: Catalogue | undefined,
+): { point: Point; clearance: number } | undefined {
+  const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
+  const outline = room.boundary.map((id) => position.get(id)).filter((point) => point !== undefined);
+  if (outline.length < 3) return undefined;
+  const xs = outline.map((point) => point.x);
+  const ys = outline.map((point) => point.y);
+  const [left, top] = [Math.min(...xs), Math.min(...ys)];
+  const [width, depth] = [Math.max(...xs) - left, Math.max(...ys) - top];
+  // Each piece on the floor, as a circle round its outline.
+  const inTheWay = floor.items.flatMap((item) => {
+    const model = catalogue ? findModel(catalogue, item.model) : undefined;
+    if (item.z > 0.4 || model?.hanging || (model && model.height < 0.05)) return [];
+    const corners = itemFootprint(item, model);
+    const middle = { x: (corners[0].x + corners[2].x) / 2, y: (corners[0].y + corners[2].y) / 2 };
+    return [{ middle, reach: Math.hypot(corners[0].x - middle.x, corners[0].y - middle.y) }];
+  });
+  const STEPS = 14;
+  let best: { point: Point; clearance: number } | undefined;
+  for (let row = 0; row < STEPS; row++) {
+    for (let column = 0; column < STEPS; column++) {
+      const point = {
+        x: left + (width * (column + 0.5)) / STEPS,
+        y: top + (depth * (row + 0.5)) / STEPS,
+      };
+      if (!pointInPolygon(point, outline)) continue;
+      let clearance = Infinity;
+      for (let i = 0; i < outline.length; i++) {
+        const a = outline[i];
+        const b = outline[(i + 1) % outline.length];
+        const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+        const t = Math.min(1, Math.max(0, ((point.x - a.x) * (b.x - a.x) + (point.y - a.y) * (b.y - a.y)) / length ** 2));
+        clearance = Math.min(clearance, Math.hypot(point.x - a.x - (b.x - a.x) * t, point.y - a.y - (b.y - a.y) * t));
+      }
+      for (const { middle, reach } of inTheWay) {
+        clearance = Math.min(clearance, Math.hypot(point.x - middle.x, point.y - middle.y) - reach);
+      }
+      if (!best || clearance > best.clearance + 1e-9) best = { point, clearance };
+    }
+  }
+  return best && { point: { x: round(best.point.x), y: round(best.point.y) }, clearance: round(best.clearance) };
 }

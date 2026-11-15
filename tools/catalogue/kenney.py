@@ -75,6 +75,9 @@ class Piece:
     tabletop: bool = False
     stairs: bool = False
     mount_height: float | None = None
+    # A screen on its front face: across from the middle, up, width and
+    # height, as fractions of the box it fills.
+    screen: tuple[float, float, float, float] | None = None
     # Materials to paint differently from PAINT, by the kit's name for them.
     paint: tuple[tuple[str, str], ...] = ()
 
@@ -134,6 +137,7 @@ def _model(piece: Piece) -> Model:
         tabletop=piece.tabletop,
         stairs=piece.stairs,
         mount_height=piece.mount_height,
+        screen_on_front=piece.screen,
     )
 
 
@@ -684,6 +688,7 @@ PIECES: tuple[Piece, ...] = (
         width=1.2,
         kind="media",
         tabletop=True,
+        screen=(0, 0.57, 0.93, 0.78),
     ),
     Piece(
         "televisionVintage",
@@ -694,6 +699,7 @@ PIECES: tuple[Piece, ...] = (
         width=0.6,
         kind="media",
         tabletop=True,
+        screen=(-0.1, 0.52, 0.6, 0.62),
     ),
     Piece(
         "radio",
@@ -765,6 +771,8 @@ PIECES: tuple[Piece, ...] = (
         ("computer", "screen"),
         width=0.6,
         tabletop=True,
+        screen=(0, 0.62, 0.93, 0.68),
+        kind="media",
     ),
     Piece(
         "computerKeyboard",

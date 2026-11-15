@@ -160,6 +160,9 @@ OPENING = vol.Schema(
         # they are glass.
         vol.Optional("style", default="hinged"): vol.In(DOOR_STYLES),
         vol.Optional("glazed", default=False): bool,
+        # Doors with no sensor: drawn shut (true) or open (false). Left
+        # unsaid, a swinging door stands open and a sliding one shut.
+        vol.Optional("closed", default=None): vol.Any(None, bool),
     }
 )
 ROOM = vol.Schema(
@@ -172,6 +175,9 @@ ROOM = vol.Schema(
         vol.Optional("wall_colour", default=DEFAULT_WALL_COLOUR): COLOUR,
         # No floor here: a stairwell, a gallery, a double-height room.
         vol.Optional("open", default=False): bool,
+        # The thermostat or sensor whose temperature is this room's: shown
+        # across its floor.
+        vol.Optional("temperature_entity", default=None): vol.Any(None, ENTITY_ID),
     }
 )
 ITEM = vol.Schema(

@@ -33,6 +33,7 @@ import {
 import { restack } from "../core/stacking";
 import {
   doorLeaves,
+  doorRest,
   slidingPanels,
   moveOpening,
   resizeOpening,
@@ -596,7 +597,7 @@ export class DioramaPlanView extends LitElement {
     floor: Floor,
     opening: Pick<
       Opening,
-      "wall" | "offset" | "width" | "type" | "leaves" | "hinge" | "swing" | "style"
+      "wall" | "offset" | "width" | "type" | "leaves" | "hinge" | "swing" | "style" | "closed"
     >,
     classes: string,
   ): TemplateResult {
@@ -645,8 +646,10 @@ export class DioramaPlanView extends LitElement {
               y: hinge.y + ux * reach * opening.swing,
             };
             const sweep = leaf.towards * opening.swing === 1 ? 1 : 0;
+            // Drawn where it stands when nothing says otherwise.
+            const rest = doorRest(opening) === 1 ? open : shut;
             return svg`
-              <line x1=${hinge.x} y1=${hinge.y} x2=${open.x} y2=${open.y} />
+              <line x1=${hinge.x} y1=${hinge.y} x2=${rest.x} y2=${rest.y} />
               <path d="M ${shut.x} ${shut.y} A ${reach} ${reach} 0 0 ${sweep} ${open.x} ${open.y}" class="swing" />
             `;
           });

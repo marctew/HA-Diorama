@@ -13,7 +13,7 @@ import {
   type TapAction,
 } from "../core/bindings";
 import { bindableEntities, fillRoom, MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
-import { updateOpening } from "../core/openings";
+import { doorRest, updateOpening } from "../core/openings";
 import type { Fixture, Floor, Item, Opening, Room } from "../core/scene";
 import {
   formatArea,
@@ -146,6 +146,28 @@ export class DioramaInspector extends LitElement {
           />
         </div>
       </div>
+      <label>
+        <span>Temperature from</span>
+        <select
+          @change=${(event: Event) =>
+            this.updateRoom(room, { temperature_entity: value(event) || null })}
+        >
+          <option value="" ?selected=${!room.temperature_entity}>Nothing</option>
+          ${this.temperatureSources(room).map(
+            (choice) =>
+              html`<option
+                value=${choice.entity_id}
+                ?selected=${choice.entity_id === room.temperature_entity}
+              >
+                ${choice.name}
+              </option>`,
+          )}
+        </select>
+      </label>
+      <p class="help">
+        A thermostat or temperature sensor. Its reading is written across the floor of the room,
+        which takes its colour from it: blue when cold, red when hot.
+      </p>
       <label class="check">
         <input
           type="checkbox"
@@ -425,6 +447,15 @@ export class DioramaInspector extends LitElement {
               <span>Glass</span>
             </label>`
         : nothing}
+      ${opening.type === "door"
+        ? html`<label>
+            <span>With no sensor it stands</span>
+            <select @change=${(event: Event) => change({ closed: value(event) === "shut" })}>
+              <option value="open" ?selected=${doorRest(opening) === 1}>Open</option>
+              <option value="shut" ?selected=${doorRest(opening) === 0}>Shut</option>
+            </select>
+          </label>`
+        : nothing}
       ${opening.type === "door" && opening.style === "sliding"
         ? html`<div class="actions tight">
             <button
@@ -480,8 +511,7 @@ export class DioramaInspector extends LitElement {
       </label>
       <p class="help">
         A door or window sensor shows it open or shut. A blind, shutter or garage door shows how far
-        down it is, and a tap works it. With no sensor a swinging door stands open and a sliding one
-        shut.
+        down it is, and a tap works it.
       </p>
       <p class="help">
         Drag it along the wall, or onto another wall. Drag either end to make it wider or narrower.
@@ -776,6 +806,26 @@ export class DioramaInspector extends LitElement {
       // A room with no name yet takes the area's.
       ...(area && !room.name ? { name: area.name } : {}),
     });
+  }
+
+  /** Thermostats and temperature sensors, those in the room's own area
+   * first. The one it has stays listed even if it has gone. */
+  private temperatureSources(room: Room): { entity_id: string; name: string }[] {
+    const all = this.hass
+      ? bindableEntities(this.hass).filter((choice) => choice.kind === "climate")
+      : [];
+    const here = all.filter((choice) => room.area_id && choice.area_id === room.area_id);
+    const choices: { entity_id: string; name: string }[] = [
+      ...here,
+      ...all.filter((choice) => !here.includes(choice)),
+    ];
+    if (
+      room.temperature_entity &&
+      !choices.some((choice) => choice.entity_id === room.temperature_entity)
+    ) {
+      choices.unshift({ entity_id: room.temperature_entity, name: room.temperature_entity });
+    }
+    return choices;
   }
 
   private updateRoom(room: Room, change: Partial<Room>): void {

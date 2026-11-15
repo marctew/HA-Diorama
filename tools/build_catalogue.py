@@ -100,6 +100,31 @@ def build() -> dict[str, bytes]:
             entry["strip"] = True
         if model.lit:
             entry["lit"] = True
+        screens = list(model.screens)
+        if model.screen_on_front is not None:
+            across, up, wide, tall = model.screen_on_front
+            screens.append(
+                (
+                    (low[0] + high[0]) / 2 + across * (high[0] - low[0]),
+                    up * high[1],
+                    high[2] + 0.004,
+                    wide * (high[0] - low[0]),
+                    tall * high[1],
+                    0,
+                )
+            )
+        if screens:
+            entry["screens"] = [
+                {
+                    "x": round(x, 4),
+                    "y": round(y, 4),
+                    "z": round(z, 4),
+                    "width": round(wide, 4),
+                    "height": round(tall, 4),
+                    "turn": round(turn, 2),
+                }
+                for x, y, z, wide, tall, turn in screens
+            ]
         models.append(entry)
     catalogue = {"version": CATALOGUE_VERSION, "sources": SOURCES, "models": models}
     files["catalogue.json"] = (json.dumps(catalogue, indent=2) + "\n").encode()

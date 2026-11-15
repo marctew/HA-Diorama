@@ -39,16 +39,18 @@ import { MISSING, type FixtureVisual } from "../core/bindings";
 import type { Catalogue } from "../core/catalogue";
 import {
   allFixtures,
+  clearSpot,
   fittingsSharing,
   fixtureHeight,
   isOpeningFixture,
+  isRoomFixture,
   stripLight,
 } from "../core/fixtures";
 import { findModel, modelUrl } from "../core/catalogue";
 import { itemScale } from "../core/items";
 import { loadModel } from "./models";
 import { triangulate } from "../core/geometry";
-import { doorLeaves, slidingPanels } from "../core/openings";
+import { doorLeaves, doorRest, slidingPanels } from "../core/openings";
 import { roomPolygon } from "../core/rooms";
 import type { Fixture, Floor, Opening } from "../core/scene";
 
@@ -65,6 +67,8 @@ const LABEL_HEIGHT = 96;
  * screen, in CSS pixels: from far off it is drawn bigger, to stay readable. */
 const LABEL_SIZE = 0.26;
 const LABEL_MIN_PIXELS = 22;
+/** How far above the floor a room's temperature is drawn: clear of a rug. */
+const DECAL_HEIGHT = 0.03;
 
 /** Finds the mesh of a wall, so that what is in the wall is lowered with it. */
 export type WallLookup = (floorId: string, wallId: string) => Object3D | undefined;
@@ -97,8 +101,7 @@ interface Leaf {
   shut: number;
   turn: number;
   slide?: { from: Vector3; by: Vector3 };
-  /** How far open it stands when no sensor says: hinged doors open, so that
-   * the rooms join up; sliding ones shut, as glass hides nothing. */
+  /** How far open it stands when no sensor says. */
   rest: number;
 }
 
@@ -121,6 +124,10 @@ interface Entry {
   sharing: number;
   /** How big its glow is, against that of a lamp. */
   glowSize: number;
+  /** The screens of a television or monitor, lit while it is on. */
+  screens?: { group: Group; material: MeshBasicMaterial };
+  /** A room's temperature, written across its floor. */
+  decal?: { mesh: Mesh; material: MeshBasicMaterial; texture: CanvasTexture; shown: string };
   /** A light panel: a skin over the whole piece, in the light's colour. */
   skin?: { mesh?: Mesh; material: MeshBasicMaterial };
   /** A strip of light: the bar itself, and the light it throws below. */
@@ -144,6 +151,7 @@ export class FixtureLayer {
   private readonly discGeometry = new CircleGeometry(1, 40).rotateX(-Math.PI / 2);
   private readonly barGeometry = new BoxGeometry(1, 0.022, 0.034);
   private readonly poolGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  private readonly screenGeometry = new PlaneGeometry(1, 1);
   private readonly leafMaterial = new MeshLambertMaterial({ color: 0xa9825a });
   private readonly glassMaterial = new MeshLambertMaterial({
     color: 0xbfdde6,
@@ -202,6 +210,14 @@ export class FixtureLayer {
     if (viewHeight <= 0) return;
     const perPixel = (2 * Math.tan((camera.fov * Math.PI) / 360)) / viewHeight;
     for (const entry of this.entries) {
+      // A room's temperature lies on the floor, turned to be read from
+      // wherever the camera is.
+      if (entry.decal?.mesh.visible) {
+        entry.decal.mesh.rotation.y = Math.atan2(
+          camera.position.x - entry.anchor.x,
+          camera.position.z - entry.anchor.z,
+        );
+      }
       const sprite = entry.label?.sprite;
       if (!sprite?.visible) continue;
       const size = Math.max(
@@ -257,6 +273,7 @@ export class FixtureLayer {
     this.blindMaterial.dispose();
     this.barGeometry.dispose();
     this.poolGeometry.dispose();
+    this.screenGeometry.dispose();
     for (const lamp of this.lamps) lamp.dispose();
   }
 
@@ -274,6 +291,9 @@ export class FixtureLayer {
       entry.blind?.mesh.removeFromParent();
       entry.blind?.mesh.geometry.dispose();
       entry.skin?.material.dispose();
+      entry.screens?.material.dispose();
+      entry.decal?.material.dispose();
+      entry.decal?.texture.dispose();
       entry.strip?.barMaterial.dispose();
       entry.strip?.poolMaterial.dispose();
     }
@@ -297,7 +317,12 @@ export class FixtureLayer {
     elevation: number,
     catalogue: Catalogue | undefined,
   ): Entry {
-    const height = catalogue ? fixtureHeight(fixture, floor, catalogue) : fixture.z || 1.2;
+    const onFloor = isRoomFixture(fixture);
+    const height = onFloor
+      ? DECAL_HEIGHT
+      : catalogue
+        ? fixtureHeight(fixture, floor, catalogue)
+        : fixture.z || 1.2;
     const anchor = new Vector3(fixture.x, elevation + height, fixture.y);
     const hasModel = fixture.item !== null || fixture.model !== null;
     const inWall = isOpeningFixture(fixture);
@@ -315,7 +340,8 @@ export class FixtureLayer {
     const boundItem =
       fixture.item !== null ? floor.items.find((one) => one.id === fixture.item) : undefined;
     const boundModel = catalogue && boundItem ? findModel(catalogue, boundItem.model) : undefined;
-    if (!hasModel && !inWall) {
+    if (onFloor) marker.visible = false;
+    if (!hasModel && !inWall && !onFloor) {
       // Something to stand on, so that a marker in mid-air reads as being
       // somewhere in the room.
       const stem = new Mesh(this.stemGeometry, this.stemMaterial);
@@ -346,6 +372,56 @@ export class FixtureLayer {
       // A downlight is a point of light, not a lampshade.
       glowSize: small ? 0.4 : 1,
     };
+    if (onFloor) {
+      // The reading lies on the floor, as wide as the room allows.
+      // In the clearest patch of floor, and no bigger than fits there.
+      const room = floor.rooms.find((one) => one.id === fixture.room);
+      const spot = room ? clearSpot(floor, room, catalogue) : undefined;
+      if (spot) anchor.set(spot.point.x, elevation + DECAL_HEIGHT, spot.point.y);
+      const shape = LABEL_WIDTH / LABEL_HEIGHT;
+      const width = Math.min(1.7, Math.max(0.55, (spot?.clearance ?? 0.5) * 1.7));
+      const canvas = document.createElement("canvas");
+      canvas.width = LABEL_WIDTH * 2;
+      canvas.height = LABEL_HEIGHT * 2;
+      const texture = new CanvasTexture(canvas);
+      texture.colorSpace = SRGBColorSpace;
+      // Drawn over whatever is in front of it: a reading hidden behind a wall
+      // or a sofa is no use on a dashboard.
+      const material = new MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+      });
+      const mesh = new Mesh(this.poolGeometry, material);
+      mesh.position.copy(anchor);
+      mesh.scale.set(width, 1, width / shape);
+      mesh.renderOrder = 3;
+      mesh.visible = false;
+      this.group.add(mesh);
+      entry.decal = { mesh, material, texture, shown: "" };
+    }
+    if (boundItem && boundModel?.screens?.length) {
+      // The screen itself shows that it is on.
+      marker.visible = false;
+      const material = new MeshBasicMaterial({ color: 0x9cc3ff });
+      const group = new Group();
+      group.position.set(boundItem.x, elevation + boundItem.z, boundItem.y);
+      group.rotation.y = (-boundItem.rotation * Math.PI) / 180;
+      group.scale.set(...itemScale(boundItem));
+      for (const screen of boundModel.screens) {
+        const picture = new Mesh(this.screenGeometry, material);
+        picture.position.set(screen.x, screen.y, screen.z);
+        picture.rotation.y = (screen.turn * Math.PI) / 180;
+        // A hair proud of the model's own dark screen.
+        picture.translateZ(0.004);
+        picture.scale.set(screen.width, screen.height, 1);
+        group.add(picture);
+      }
+      group.visible = false;
+      this.group.add(group);
+      entry.screens = { group, material };
+    }
     if (catalogue && boundItem && boundModel?.lit) {
       // The whole panel takes the light's colour. Its shape is the model's
       // own, which may still be on its way.
@@ -465,7 +541,7 @@ export class FixtureLayer {
       // other way to open to the same side.
       const shut = leaf.towards === 1 ? angle : angle + Math.PI;
       const turn = -leaf.towards * opening.swing * DOOR_SWING;
-      return { mesh, shut, turn, rest: 1 };
+      return { mesh, shut, turn, rest: doorRest(opening) };
     });
     // Sliding panels run in two tracks, side by side in the wall.
     const sliding: Leaf[] = slidingPanels(opening).map((one) => {
@@ -478,7 +554,7 @@ export class FixtureLayer {
       );
       mesh.scale.set(one.width, opening.height, 1);
       const by = new Vector3(along.x * one.travel, 0, along.y * one.travel);
-      return { mesh, shut: angle, turn: 0, slide: { from, by }, rest: 0 };
+      return { mesh, shut: angle, turn: 0, slide: { from, by }, rest: doorRest(opening) };
     });
     const leaves = [...hinged, ...sliding];
     for (const leaf of leaves) {
@@ -574,6 +650,16 @@ export class FixtureLayer {
     return geometry;
   }
 
+  /** Show, change or hide a room's temperature on its floor. */
+  private applyDecal(decal: NonNullable<Entry["decal"]>, visual: FixtureVisual): void {
+    const text = visual.available ? (visual.label ?? "") : "";
+    decal.mesh.visible = text !== "";
+    if (!text || text === decal.shown) return;
+    decal.shown = text;
+    drawDecal(decal.texture.image as HTMLCanvasElement, text);
+    decal.texture.needsUpdate = true;
+  }
+
   /** Show, change or hide the reading beside a fixture. */
   private applyLabel(entry: Entry, visual: FixtureVisual): void {
     const text = visual.available ? (visual.label ?? "") : "";
@@ -625,6 +711,12 @@ export class FixtureLayer {
       entry.markerMaterial.opacity = visual.available ? 1 : 0.45;
       const glowing = visual.available && visual.glows;
       entry.glow.visible = glowing && !entry.strip;
+      if (entry.screens) {
+        entry.screens.group.visible = visual.available && visual.on;
+        // Brighter while something is playing than when it is merely on.
+        const bright = visual.glows ? 1 : 0.6;
+        entry.screens.material.color.setRGB(0.55 * bright, 0.75 * bright, 1 * bright, SRGBColorSpace);
+      }
       if (entry.skin) {
         entry.skin.material.color.copy(colour);
         // Off, the panel is its own white.
@@ -665,7 +757,8 @@ export class FixtureLayer {
         entry.tintMaterial.color.copy(colour);
         entry.tintMaterial.opacity = strength;
       }
-      this.applyLabel(entry, visual);
+      if (entry.decal) this.applyDecal(entry.decal, visual);
+      else this.applyLabel(entry, visual);
       const open = visual.available ? (visual.open ?? 0) : 0;
       for (const leaf of entry.leaves ?? []) setLeaf(leaf, open);
       if (entry.blind) {
@@ -714,6 +807,28 @@ function makeGlowTexture(): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   return texture;
+}
+
+/** A reading in big figures with nothing behind them, to lie on a floor of
+ * any colour by day or night: white, edged in dark. */
+function drawDecal(canvas: HTMLCanvasElement, text: string): void {
+  const context = canvas.getContext("2d")!;
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  let size = canvas.height * 0.82;
+  const font = () => `700 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  context.font = font();
+  while (size > 30 && context.measureText(text).width > canvas.width - 40) {
+    size -= 4;
+    context.font = font();
+  }
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.lineJoin = "round";
+  context.lineWidth = size * 0.12;
+  context.strokeStyle = "rgba(20, 24, 30, 0.55)";
+  context.strokeText(text, canvas.width / 2, canvas.height / 2 + 4);
+  context.fillStyle = "rgba(255, 255, 255, 0.94)";
+  context.fillText(text, canvas.width / 2, canvas.height / 2 + 4);
 }
 
 /** A reading on a dark pill, ringed with its colour. */

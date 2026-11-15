@@ -353,3 +353,23 @@ def test_one_entity_can_be_placed_many_times() -> None:
     floor = validate_floor(data)
     assert len({fixture["entity_id"] for fixture in floor["fixtures"]}) == 1
     assert len(floor["fixtures"]) == 6
+
+
+def test_room_temperature_and_door_rest() -> None:
+    floor = validate_floor(sample_floor())
+    assert floor["rooms"][0]["temperature_entity"] is None
+    assert floor["openings"][0]["closed"] is None
+    data = sample_floor()
+    data["rooms"][0]["temperature_entity"] = "sensor.kitchen_temperature"
+    data["openings"][0]["closed"] = True
+    floor = validate_floor(data)
+    assert floor["rooms"][0]["temperature_entity"] == "sensor.kitchen_temperature"
+    assert floor["openings"][0]["closed"] is True
+    for where, bad in (
+        ("rooms", {"temperature_entity": "not an entity"}),
+        ("openings", {"closed": "yes"}),
+    ):
+        data = sample_floor()
+        data[where][0].update(bad)
+        with pytest.raises(vol.Invalid):
+            validate_floor(data)

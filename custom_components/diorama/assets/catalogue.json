@@ -109,7 +109,17 @@
       ],
       "against_wall": true,
       "kind": "media",
-      "surface": true
+      "surface": true,
+      "screens": [
+        {
+          "x": 0,
+          "y": 0.93,
+          "z": 0.037,
+          "width": 1.18,
+          "height": 0.66,
+          "turn": 0
+        }
+      ]
     },
     {
       "id": "basics/bookcase",
@@ -661,8 +671,19 @@
         0.0
       ],
       "against_wall": true,
+      "kind": "media",
       "surface": true,
-      "surface_height": 0.74
+      "surface_height": 0.74,
+      "screens": [
+        {
+          "x": -0.2,
+          "y": 1.0,
+          "z": -0.153,
+          "width": 0.48,
+          "height": 0.28,
+          "turn": 0
+        }
+      ]
     },
     {
       "id": "basics/office_chair",
@@ -910,7 +931,18 @@
         0.0,
         -0.047
       ],
-      "against_wall": false
+      "against_wall": false,
+      "kind": "media",
+      "screens": [
+        {
+          "x": 0.0,
+          "y": 0.93,
+          "z": 0.597,
+          "width": 0.71,
+          "height": 0.39,
+          "turn": 180
+        }
+      ]
     },
     {
       "id": "basics/sim_rig_triple",
@@ -933,7 +965,34 @@
         0.0,
         -0.047
       ],
-      "against_wall": false
+      "against_wall": false,
+      "kind": "media",
+      "screens": [
+        {
+          "x": 0.0,
+          "y": 0.93,
+          "z": 0.597,
+          "width": 0.71,
+          "height": 0.39,
+          "turn": 180
+        },
+        {
+          "x": -0.5902,
+          "y": 0.93,
+          "z": 0.3218,
+          "width": 0.71,
+          "height": 0.39,
+          "turn": 130
+        },
+        {
+          "x": 0.5902,
+          "y": 0.93,
+          "z": 0.3218,
+          "width": 0.71,
+          "height": 0.39,
+          "turn": 230
+        }
+      ]
     },
     {
       "id": "kenney/sofa_lounge",
@@ -1997,7 +2056,17 @@
       ],
       "against_wall": false,
       "kind": "media",
-      "tabletop": true
+      "tabletop": true,
+      "screens": [
+        {
+          "x": 0.0,
+          "y": 0.4542,
+          "z": 0.1165,
+          "width": 1.116,
+          "height": 0.6216,
+          "turn": 0
+        }
+      ]
     },
     {
       "id": "kenney/tv_old",
@@ -2019,7 +2088,17 @@
       ],
       "against_wall": false,
       "kind": "media",
-      "tabletop": true
+      "tabletop": true,
+      "screens": [
+        {
+          "x": -0.06,
+          "y": 0.2055,
+          "z": 0.2016,
+          "width": 0.36,
+          "height": 0.245,
+          "turn": 0
+        }
+      ]
     },
     {
       "id": "kenney/radio",
@@ -2200,7 +2279,18 @@
         0.0
       ],
       "against_wall": false,
-      "tabletop": true
+      "kind": "media",
+      "tabletop": true,
+      "screens": [
+        {
+          "x": 0.0,
+          "y": 0.2788,
+          "z": 0.0835,
+          "width": 0.558,
+          "height": 0.3058,
+          "turn": 0
+        }
+      ]
     },
     {
       "id": "kenney/keyboard",

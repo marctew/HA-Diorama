@@ -181,6 +181,7 @@ export function detectRooms(
       floor_style: DEFAULT_FLOOR_STYLE,
       wall_colour: DEFAULT_WALL_COLOUR,
       open: false,
+      temperature_entity: null,
     });
   });
   return rooms;
