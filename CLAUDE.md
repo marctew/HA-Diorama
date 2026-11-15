@@ -25,7 +25,7 @@ Add a test with every change to logic, backend or frontend. Changes to what the 
 
 - Home Assistant docs are at https://contributors.home-assistant.io (every page has a Markdown version at `<url>/index.md`). Check them before using a Home Assistant API; do not rely on memory.
 - No dependency on Home Assistant's internal `ha-*` elements except `ha-card`.
-- The version lives in `custom_components/diorama/manifest.json` and must equal the release tag.
+- The version lives in `custom_components/diorama/manifest.json` and must equal the release tag. Pushing that tag makes the release (`.github/workflows/release.yml`).
 - UK English in user-facing text. Words in the card, its settings and the 3D view go in `frontend/src/locales/en.ts` and are read with `t()` from `shared/localize.ts`, not written in the component.
 - `CHANGELOG.md` gets a line for anything a user would notice; its section for a version is that release's notes.
 - A Lit property that is true by default takes `attribute: false` and is set with `.prop=${...}`; a boolean attribute cannot switch it off (SPEC 14).
