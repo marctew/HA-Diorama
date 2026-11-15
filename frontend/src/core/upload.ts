@@ -23,7 +23,7 @@ export const MODEL_KINDS = ["light", "switch", "media"] as const;
 export type ModelKind = (typeof MODEL_KINDS)[number];
 
 /** The server takes nothing bigger, and nothing outside these sizes. */
-export const MODEL_MAX_BYTES = 10 * 1024 * 1024;
+export const MODEL_MAX_BYTES = 25 * 1024 * 1024;
 /** A file bigger than this is not even read: it would only hang the page. */
 export const MODEL_FILE_MAX_BYTES = 60 * 1024 * 1024;
 export const MODEL_MIN_SIZE = 0.01;

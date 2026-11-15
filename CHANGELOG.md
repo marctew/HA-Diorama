@@ -6,6 +6,7 @@ The notes of each release are what Home Assistant shows on Diorama's update. Any
 
 - Compressed models can be added: the ones furniture shops such as IKEA publish would not read before.
 - A model you add takes its colours from its textures, rather than coming out white where it had no other colour.
+- Much more detailed models fit: one is kept in about a quarter of the space it took, and the most that is kept is 25 MB rather than 10.
 
 ## 0.4.0
 

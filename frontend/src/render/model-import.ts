@@ -3,9 +3,10 @@
 // on the floor, middle on the origin, colours on its vertices, no textures).
 // Whatever the file was, what is stored is small and draws like the rest.
 
-import { BufferGeometry, Mesh, MeshStandardMaterial, Vector3, type Texture } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, MeshStandardMaterial, Vector3, type Texture } from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { decoderPath } from "../core/decoder";
@@ -78,13 +79,33 @@ export async function readModel(data: ArrayBuffer): Promise<ReadModel> {
 }
 
 /** The model at a scale, as the bytes of a .glb file ready to send. */
+/** The same shape in fewer bytes: a colour is a byte a channel, which is
+ * all a screen shows, and a corner that several faces share with the same
+ * colour and facing is written once. A detailed model is a quarter of the
+ * size for it. */
+function compact(geometry: BufferGeometry): BufferGeometry {
+  const colour = geometry.getAttribute("color");
+  if (colour) {
+    const bytes = new Uint8Array(colour.count * 3);
+    for (let i = 0; i < colour.count; i++) {
+      bytes[i * 3] = Math.round(Math.min(1, Math.max(0, colour.getX(i))) * 255);
+      bytes[i * 3 + 1] = Math.round(Math.min(1, Math.max(0, colour.getY(i))) * 255);
+      bytes[i * 3 + 2] = Math.round(Math.min(1, Math.max(0, colour.getZ(i))) * 255);
+    }
+    geometry.setAttribute("color", new BufferAttribute(bytes, 3, true));
+  }
+  return mergeVertices(geometry);
+}
+
 export async function prepareModel(model: ReadModel, scale: number): Promise<ArrayBuffer> {
-  const geometry = model.geometry.clone();
+  const loose = model.geometry.clone();
   const box = model.geometry.boundingBox!;
   const middle = box.getCenter(new Vector3());
   // Middle on the origin, feet on the floor, then to size.
-  geometry.translate(-middle.x, -box.min.y, -middle.z);
-  geometry.scale(scale, scale, scale);
+  loose.translate(-middle.x, -box.min.y, -middle.z);
+  loose.scale(scale, scale, scale);
+  const geometry = compact(loose);
+  loose.dispose();
   const material = new MeshStandardMaterial({ vertexColors: true });
   try {
     const result = await new GLTFExporter().parseAsync(new Mesh(geometry, material), {

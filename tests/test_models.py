@@ -8,6 +8,7 @@ import struct
 from homeassistant.core import HomeAssistant
 import pytest
 
+from custom_components.diorama.const import MODEL_MAX_BYTES
 from custom_components.diorama.models import (
     find_model_file,
     is_glb,
@@ -129,7 +130,7 @@ async def test_models_are_still_there_after_a_restart(
         (b"not a model", DETAILS, HTTPStatus.UNSUPPORTED_MEDIA_TYPE),
         (b"", DETAILS, HTTPStatus.UNSUPPORTED_MEDIA_TYPE),
         (
-            glb() + b"\x00" * (10 * 1024 * 1024),
+            glb() + b"\x00" * MODEL_MAX_BYTES,
             DETAILS,
             HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
         ),

@@ -28,7 +28,7 @@ TRACE_MAX_BYTES = 10 * 1024 * 1024
 
 # Models people add themselves, kept the same way.
 MODEL_FOLDER = "diorama/models"
-MODEL_MAX_BYTES = 10 * 1024 * 1024
+MODEL_MAX_BYTES = 25 * 1024 * 1024
 MODEL_LIMIT = 200
 MODELS_KEY = "diorama.models"
 USER_SOURCE = "user"
