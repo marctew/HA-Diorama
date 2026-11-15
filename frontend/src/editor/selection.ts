@@ -7,6 +7,7 @@ export interface Selection {
   walls: readonly string[];
   items: readonly string[];
   fixtures: readonly string[];
+  openings: readonly string[];
   room: string | null;
 }
 
@@ -15,6 +16,7 @@ export const NO_SELECTION: Selection = {
   walls: [],
   items: [],
   fixtures: [],
+  openings: [],
   room: null,
 };
 
@@ -28,7 +30,8 @@ export function selectionCount(selection: Selection): number {
     selection.vertices.length +
     selection.walls.length +
     selection.items.length +
-    selection.fixtures.length
+    selection.fixtures.length +
+    selection.openings.length
   );
 }
 
@@ -43,6 +46,8 @@ export function prune(selection: Selection, floor: Floor): Selection {
   const items = selection.items.filter((id) => itemIds.has(id));
   const fixtureIds = new Set(floor.fixtures.map((fixture) => fixture.id));
   const fixtures = selection.fixtures.filter((id) => fixtureIds.has(id));
+  const openingIds = new Set(floor.openings.map((opening) => opening.id));
+  const openings = selection.openings.filter((id) => openingIds.has(id));
   const room =
     selection.room !== null && floor.rooms.some((r) => r.id === selection.room)
       ? selection.room
@@ -52,11 +57,12 @@ export function prune(selection: Selection, floor: Floor): Selection {
     walls.length === selection.walls.length &&
     items.length === selection.items.length &&
     fixtures.length === selection.fixtures.length &&
+    openings.length === selection.openings.length &&
     room === selection.room
   ) {
     return selection;
   }
-  return { vertices, walls, items, fixtures, room };
+  return { vertices, walls, items, fixtures, openings, room };
 }
 
 /** Add an id to a list, or take it out if it is there (shift-click). */

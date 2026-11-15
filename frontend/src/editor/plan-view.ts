@@ -19,9 +19,17 @@ import {
   placeItem,
   snapToWall,
 } from "../core/items";
+import {
+  moveOpening,
+  nearestWall,
+  openingAt,
+  openingEnds,
+  placeOpening,
+  type OpeningType,
+} from "../core/openings";
 import { addWall, commit, moveVertices } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
-import type { Fixture, Floor, Item } from "../core/scene";
+import type { Fixture, Floor, Item, Opening } from "../core/scene";
 import { snap, type SnapResult } from "../core/snap";
 import { formatArea, formatLength, parseLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
@@ -29,24 +37,27 @@ import { icon } from "./icons";
 import { NO_SELECTION, prune, toggle, type Selection } from "./selection";
 import { fit, gridStep, scaleBarLength, toScreen, toWorld, zoomAt, type View } from "./view";
 
-export type Tool = "select" | "wall" | "furniture" | "device";
+export type Tool = "select" | "wall" | "opening" | "furniture" | "device";
 
 const SNAP_PIXELS = 10;
 const VERTEX_HIT_PIXELS = 10;
 const WALL_HIT_PIXELS = 7;
 const BADGE_RADIUS = 10;
 const BADGE_HIT_PIXELS = 13;
+/** How near a wall the pointer has to be to put a door or window in it. */
+const OPENING_REACH_PIXELS = 16;
 const DRAG_START_PIXELS = 4;
 /** Furniture this close to a wall, in pixels, turns its back to it. */
 const WALL_SNAP_PIXELS = 18;
 /** Snap to 5 cm. */
 const GRID = 0.05;
 
-type Hit = { kind: "vertex" | "wall" | "item" | "fixture" | "room"; id: string };
+type Hit = { kind: "vertex" | "wall" | "item" | "fixture" | "opening" | "room"; id: string };
 
 type Drag =
   | { kind: "pan"; pointer: number; last: Point }
   | { kind: "marquee"; pointer: number; start: Point; end: Point }
+  | { kind: "opening"; pointer: number; start: Point; id: string; moved: boolean }
   | {
       kind: "move";
       pointer: number;
@@ -80,6 +91,12 @@ export class DioramaPlanView extends LitElement {
   @property({ attribute: false }) visuals: ReadonlyMap<string, FixtureVisual> = new Map();
   /** The entity that a click will place, with the device tool. */
   @property() placingEntity?: string;
+  /** What the door and window tool places. */
+  @property() openingType: OpeningType = "door";
+  /** A plan image to show under the drawing, and its size in pixels. */
+  @property({ attribute: false }) traceImage?: { url: string; width: number; height: number };
+  /** Waiting for two clicks on the image, to set its scale. */
+  @property({ type: Boolean }) calibrating = false;
   @property() units: UnitSystem = "metric";
   /** Look but do not touch: panning and zooming only. */
   @property({ type: Boolean }) readonly = false;
@@ -101,6 +118,10 @@ export class DioramaPlanView extends LitElement {
   @state() private placeRotation = 0;
   /** Where the entity being placed would go, and the lamp it would join. */
   @state() private deviceGhost?: { point: Point; item?: Item };
+  /** The door or window that a click would place. */
+  @state() private openingGhost?: Omit<Opening, "id">;
+  /** The first point picked while setting the image's scale. */
+  @state() private calibrationStart?: Point;
   @state() private marquee?: { start: Point; end: Point };
   @state() private panning = false;
   @state() private spaceDown = false;
@@ -118,7 +139,7 @@ export class DioramaPlanView extends LitElement {
       this.width = entry.contentRect.width;
       this.height = entry.contentRect.height;
       // Until someone pans or zooms, keep the whole floor in view.
-      if (!this.viewTouched && this.floor) this.view = fit(this.floor, this.width, this.height);
+      if (!this.viewTouched && this.floor) this.view = this.fittedView(this.floor);
     });
     this.resizeObserver.observe(this);
   }
@@ -133,7 +154,11 @@ export class DioramaPlanView extends LitElement {
     if (this.floor && this.width > 0 && this.height > 0 && this.fitted !== this.floor.id) {
       this.fitted = this.floor.id;
       this.viewTouched = false;
-      this.view = fit(this.floor, this.width, this.height);
+      this.view = this.fittedView(this.floor);
+    }
+    // A plan image that has just arrived is brought into view with the rest.
+    if (changed.has("traceImage") && this.traceImage && this.floor && !this.viewTouched) {
+      this.view = this.fittedView(this.floor);
     }
     if (changed.has("tool") && this.tool !== "wall") this.stopDrawing();
     if (changed.has("tool") || changed.has("placing")) {
@@ -143,6 +168,8 @@ export class DioramaPlanView extends LitElement {
     if (changed.has("tool") || changed.has("placingEntity")) {
       if (this.tool !== "device" || !this.placingEntity) this.deviceGhost = undefined;
     }
+    if (changed.has("tool") && this.tool !== "opening") this.openingGhost = undefined;
+    if (changed.has("calibrating") && !this.calibrating) this.calibrationStart = undefined;
     if (changed.has("floor")) this.transient = undefined;
   }
 
@@ -151,7 +178,20 @@ export class DioramaPlanView extends LitElement {
   /** Show the whole floor. */
   fitToFloor(): void {
     this.viewTouched = false;
-    if (this.floor) this.view = fit(this.floor, this.width, this.height);
+    if (this.floor) this.view = this.fittedView(this.floor);
+  }
+
+  /** The view that shows the whole floor, and the plan image under it. */
+  private fittedView(floor: Floor): View {
+    const corners: Point[] = [];
+    if (floor.trace && this.traceImage) {
+      const { x, y, scale } = floor.trace;
+      corners.push(
+        { x, y },
+        { x: x + this.traceImage.width * scale, y: y + this.traceImage.height * scale },
+      );
+    }
+    return fit(floor, this.width, this.height, 80, corners);
   }
 
   /** True while a wall is being drawn. */
@@ -225,17 +265,19 @@ export class DioramaPlanView extends LitElement {
         @contextmenu=${this.onContextMenu}
         @dblclick=${this.onDoubleClick}
       >
-        ${this.renderGrid()}
+        ${this.renderTrace(floor)} ${this.renderGrid()}
         ${floor
           ? [
               this.renderRooms(floor),
               this.renderItems(floor),
               this.renderWalls(floor),
+              this.renderOpenings(floor),
               this.renderVertices(floor),
               this.renderFixtures(floor),
             ]
           : nothing}
-        ${this.renderGhost()} ${this.renderDeviceGhost()} ${this.renderDrawing()} ${this.renderMarquee()}
+        ${this.renderGhost()} ${this.renderDeviceGhost()} ${this.renderOpeningGhost(floor)}
+        ${this.renderCalibration()} ${this.renderDrawing()} ${this.renderMarquee()}
       </svg>
       ${this.renderScaleBar()}
       <div class="zoom" role="group" aria-label="Zoom">
@@ -255,7 +297,7 @@ export class DioramaPlanView extends LitElement {
   private cursorClass(): string {
     if (this.panning) return "panning";
     if (this.spaceDown || this.readonly) return "pannable";
-    if (this.tool === "wall") return "drawing";
+    if (this.tool === "wall" || this.tool === "opening" || this.calibrating) return "drawing";
     if (this.tool === "device" && this.placingEntity) return "placing";
     return this.tool === "furniture" && this.placing ? "placing" : "";
   }
@@ -397,7 +439,7 @@ export class DioramaPlanView extends LitElement {
   }
 
   private renderVertices(floor: Floor): TemplateResult[] {
-    if (this.readonly || this.tool === "furniture" || this.tool === "device") return [];
+    if (this.readonly || this.tool !== "select" && this.tool !== "wall") return [];
     const selected = new Set(this.selection.vertices);
     return floor.vertices.map((vertex) => {
       const point = toScreen(this.view, vertex);
@@ -406,6 +448,80 @@ export class DioramaPlanView extends LitElement {
         cx=${point.x} cy=${point.y} r=${selected.has(vertex.id) ? 6 : 4}
       />`;
     });
+  }
+
+  /** The plan image being traced over. */
+  private renderTrace(floor: Floor | undefined): TemplateResult | typeof nothing {
+    const trace = floor?.trace;
+    const image = this.traceImage;
+    if (!trace || !image) return nothing;
+    const at = toScreen(this.view, trace);
+    const scale = trace.scale * this.view.scale;
+    return svg`<image
+      class="trace"
+      href=${image.url}
+      x=${at.x} y=${at.y}
+      width=${image.width * scale} height=${image.height * scale}
+      opacity=${trace.opacity}
+      preserveAspectRatio="none"
+    />`;
+  }
+
+  private renderCalibration(): TemplateResult | typeof nothing {
+    if (!this.calibrating || !this.calibrationStart) return nothing;
+    const from = toScreen(this.view, this.calibrationStart);
+    const pointer = this.lastPointer?.screen ?? from;
+    return svg`
+      <line class="measure" x1=${from.x} y1=${from.y} x2=${pointer.x} y2=${pointer.y} />
+      <circle class="measure-end" cx=${from.x} cy=${from.y} r="5" />
+      <circle class="measure-end" cx=${pointer.x} cy=${pointer.y} r="5" />
+    `;
+  }
+
+  /** Doors and windows, drawn over the walls they are in. */
+  private renderOpenings(floor: Floor): TemplateResult[] {
+    const selected = new Set(this.selection.openings);
+    return floor.openings.map((opening) =>
+      this.renderOpening(floor, opening, selected.has(opening.id) ? "selected" : ""),
+    );
+  }
+
+  private renderOpening(
+    floor: Floor,
+    opening: Pick<Opening, "wall" | "offset" | "width" | "type">,
+    classes: string,
+  ): TemplateResult {
+    const ends = openingEnds(floor, opening);
+    if (!ends) return svg``;
+    const a = toScreen(this.view, ends.start);
+    const b = toScreen(this.view, ends.end);
+    const length = distance(a, b);
+    if (length < 1) return svg``;
+    const ux = (b.x - a.x) / length;
+    const uy = (b.y - a.y) / length;
+    // Half the wall's thickness, across it, in pixels.
+    const half = Math.max(2.5, ends.thickness * this.view.scale) / 2 + 0.75;
+    const corner = (along: Point, side: number) => `${along.x - uy * half * side},${along.y + ux * half * side}`;
+    const gap = `${corner(a, 1)} ${corner(b, 1)} ${corner(b, -1)} ${corner(a, -1)}`;
+    const symbol =
+      opening.type === "door"
+        ? // The leaf, standing open, and the sweep of its swing.
+          svg`
+            <line x1=${a.x} y1=${a.y} x2=${a.x - uy * length} y2=${a.y + ux * length} />
+            <path d="M ${b.x} ${b.y} A ${length} ${length} 0 0 1 ${a.x - uy * length} ${a.y + ux * length}" class="swing" />
+          `
+        : svg`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`;
+    return svg`
+      <g class="opening ${opening.type} ${classes}">
+        <polygon points=${gap} />
+        ${symbol}
+      </g>
+    `;
+  }
+
+  private renderOpeningGhost(floor: Floor | undefined): TemplateResult | typeof nothing {
+    if (!floor || !this.openingGhost || this.readonly) return nothing;
+    return this.renderOpening(floor, this.openingGhost, "ghost");
   }
 
   /** Each fixture as a round badge: filled with its colour when on. */
@@ -568,6 +684,28 @@ export class DioramaPlanView extends LitElement {
     }
     if (event.button !== 0 || !this.floor) return;
 
+    if (this.calibrating) {
+      const world = toWorld(this.view, screen);
+      if (!this.calibrationStart) {
+        this.calibrationStart = world;
+      } else {
+        const first = this.calibrationStart;
+        this.calibrationStart = undefined;
+        this.dispatchEvent(new CustomEvent("plan-calibrate", { detail: { first, second: world } }));
+      }
+      return;
+    }
+    if (this.tool === "opening") {
+      this.updateOpeningGhost(screen);
+      const ghost = this.openingGhost;
+      if (!ghost) return;
+      const ends = openingEnds(this.floor, ghost);
+      if (!ends) return;
+      const middle = { x: (ends.start.x + ends.end.x) / 2, y: (ends.start.y + ends.end.y) / 2 };
+      const placed = placeOpening(this.floor, ghost.wall, ghost.type, middle);
+      if (placed.id) this.edit(placed.floor);
+      return;
+    }
     if (this.tool === "wall") {
       this.placePoint(this.snapAt(screen, event));
       return;
@@ -586,7 +724,13 @@ export class DioramaPlanView extends LitElement {
     const hit = this.hitTest(toWorld(this.view, screen));
     if (hit && hit.kind !== "room") {
       const list = (
-        { vertex: "vertices", wall: "walls", item: "items", fixture: "fixtures" } as const
+        {
+          vertex: "vertices",
+          wall: "walls",
+          item: "items",
+          fixture: "fixtures",
+          opening: "openings",
+        } as const
       )[hit.kind];
       const already = this.selection[list].includes(hit.id);
       let selection: Selection;
@@ -599,6 +743,12 @@ export class DioramaPlanView extends LitElement {
       }
       this.select(selection);
       if (event.shiftKey && already) return;
+      if (hit.kind === "opening") {
+        // A door or window slides along walls, one at a time.
+        svgElement.setPointerCapture(event.pointerId);
+        this.drag = { kind: "opening", pointer: event.pointerId, start: screen, id: hit.id, moved: false };
+        return;
+      }
       this.startMove(svgElement, event, screen, selection, hit);
       return;
     }
@@ -692,10 +842,25 @@ export class DioramaPlanView extends LitElement {
       this.dragTo(drag, screen, event);
       return;
     }
+    if (drag?.kind === "opening" && drag.pointer === event.pointerId) {
+      if (!drag.moved && distance(screen, drag.start) < DRAG_START_PIXELS) return;
+      drag.moved = true;
+      const floor = this.floor!;
+      const world = toWorld(this.view, screen);
+      const current = floor.openings.find((opening) => opening.id === drag.id)?.wall;
+      const wall = nearestWall(floor, world, OPENING_REACH_PIXELS / this.view.scale) ?? current;
+      if (wall) this.transient = moveOpening(floor, drag.id, wall, world);
+      return;
+    }
+    if (this.calibrating) {
+      this.requestUpdate();
+      return;
+    }
     if (this.readonly) return;
     this.target = this.tool === "wall" ? this.snapAt(screen, event) : undefined;
     if (this.tool === "furniture" && this.placing) this.updateGhost(screen, event);
     if (this.tool === "device" && this.placingEntity) this.updateDeviceGhost(screen, event);
+    if (this.tool === "opening") this.updateOpeningGhost(screen);
   }
 
   /** Move what is being dragged. The thing that was grabbed snaps; the rest
@@ -774,6 +939,12 @@ export class DioramaPlanView extends LitElement {
       }
       return;
     }
+    if (drag.kind === "opening") {
+      const slid = this.transient;
+      this.transient = undefined;
+      if (drag.moved && slid) this.edit(slid);
+      return;
+    }
     if (drag.kind !== "move") return;
     const moved = this.transient;
     this.transient = undefined;
@@ -788,6 +959,7 @@ export class DioramaPlanView extends LitElement {
     if (!this.chain) this.target = undefined;
     this.ghost = undefined;
     this.deviceGhost = undefined;
+    this.openingGhost = undefined;
     this.lastPointer = undefined;
   }
 
@@ -869,6 +1041,16 @@ export class DioramaPlanView extends LitElement {
     // Not selected: the next click places another.
   }
 
+  // Doors and windows.
+
+  private updateOpeningGhost(screen: Point): void {
+    const floor = this.floor;
+    if (!floor) return;
+    const world = toWorld(this.view, screen);
+    const wall = nearestWall(floor, world, OPENING_REACH_PIXELS / this.view.scale);
+    this.openingGhost = wall ? openingAt(floor, wall, this.openingType, world) : undefined;
+  }
+
   // Devices.
 
   private updateDeviceGhost(screen: Point, event: { altKey: boolean }): void {
@@ -916,6 +1098,17 @@ export class DioramaPlanView extends LitElement {
       }
     }
     if (best) return { kind: "fixture", id: best.id };
+
+    for (const opening of floor.openings) {
+      const ends = openingEnds(floor, opening);
+      if (!ends) continue;
+      const reach = Math.max(WALL_HIT_PIXELS / this.view.scale, ends.thickness / 2);
+      const projected = projectOnSegment(world, ends.start, ends.end);
+      if (projected.distance <= reach && (!best || projected.distance < best.distance)) {
+        best = { id: opening.id, distance: projected.distance };
+      }
+    }
+    if (best) return { kind: "opening", id: best.id };
 
     const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
     for (const wall of floor.walls) {
@@ -976,6 +1169,12 @@ export class DioramaPlanView extends LitElement {
         .map((wall) => wall.id),
       items: floor.items.filter(inside).map((item) => item.id),
       fixtures: floor.fixtures.filter(inside).map((fixture) => fixture.id),
+      openings: floor.openings
+        .filter((opening) => {
+          const ends = openingEnds(floor, opening);
+          return ends !== undefined && inside(ends.start) && inside(ends.end);
+        })
+        .map((opening) => opening.id),
       room: null,
     });
   }
@@ -1142,6 +1341,49 @@ export class DioramaPlanView extends LitElement {
       }
       .badge.ghost path {
         stroke: #fff;
+      }
+      .trace {
+        pointer-events: none;
+      }
+      .measure {
+        stroke: var(--diorama-accent);
+        stroke-width: 2;
+        stroke-dasharray: 6 4;
+      }
+      .measure-end {
+        fill: var(--halo);
+        stroke: var(--diorama-accent);
+        stroke-width: 2;
+      }
+      .opening polygon {
+        fill: var(--halo);
+        stroke: none;
+      }
+      .opening line,
+      .opening path {
+        fill: none;
+        stroke: color-mix(in srgb, var(--diorama-text) 78%, transparent);
+        stroke-width: 1.5;
+        stroke-linecap: round;
+      }
+      .opening.window line {
+        stroke-width: 2.5;
+      }
+      .opening .swing {
+        stroke-width: 1;
+        stroke-dasharray: 3 3;
+      }
+      .opening.selected line,
+      .opening.selected path,
+      .opening.ghost line,
+      .opening.ghost path {
+        stroke: var(--diorama-accent);
+      }
+      .opening.selected polygon {
+        fill: color-mix(in srgb, var(--diorama-accent) 30%, var(--halo));
+      }
+      .opening.ghost {
+        pointer-events: none;
       }
       .wall {
         stroke: color-mix(in srgb, var(--diorama-text) 82%, transparent);

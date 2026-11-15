@@ -38,6 +38,7 @@ DEFAULT_FLOOR_STYLE = "default"
 DEFAULT_HOUSE_NAME = "Home"
 
 MAX_FLOORS = 50
+MAX_CAMERAS = 30
 MAX_VERTICES = 2000
 MAX_WALLS = 2000
 MAX_OPENINGS = 1000
@@ -224,6 +225,21 @@ FLOOR_META = vol.Schema(
         vol.Optional("ha_floor_id", default=None): vol.Any(None, text(255, minimum=1)),
     }
 )
+# A point in the model: x across, y up, z down the plan, in metres.
+POINT_3D = vol.All(
+    [number(-2 * MAX_COORDINATE, 2 * MAX_COORDINATE)], vol.Length(min=3, max=3)
+)
+# A saved camera view: where the camera is and what it looks at. Positions are
+# as seen with `floor` on the ground; views that stack floors add its height.
+CAMERA = vol.Schema(
+    {
+        vol.Required("id"): ID,
+        vol.Required("name"): text(60, minimum=1),
+        vol.Optional("floor", default=None): vol.Any(None, ID),
+        vol.Required("position"): POINT_3D,
+        vol.Required("target"): POINT_3D,
+    }
+)
 HOUSE_SETTINGS = vol.Schema(
     {vol.Optional("name", default=DEFAULT_HOUSE_NAME): text(100, minimum=1)}
 )
@@ -233,6 +249,9 @@ _HOUSE = vol.Schema(
         vol.Optional("settings", default=dict): HOUSE_SETTINGS,
         vol.Optional("floors", default=list): vol.All(
             [FLOOR_META], vol.Length(max=MAX_FLOORS)
+        ),
+        vol.Optional("cameras", default=list): vol.All(
+            [CAMERA], vol.Length(max=MAX_CAMERAS)
         ),
     }
 )
@@ -324,7 +343,12 @@ def validate_house(data: Any) -> dict[str, Any]:
     house = _HOUSE(data)
     house.pop("schema_version", None)
     house.pop("revision", None)
-    _unique_ids("floors", house["floors"])
+    floors = _unique_ids("floors", house["floors"])
+    _unique_ids("cameras", house["cameras"])
+    for camera in house["cameras"]:
+        # A view saved on a floor that has since gone still works, on the ground.
+        if camera["floor"] is not None and camera["floor"] not in floors:
+            camera["floor"] = None
     return house
 
 

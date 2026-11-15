@@ -16,9 +16,10 @@ import {
   type Point,
 } from "./geometry";
 import { roomPolygon } from "./rooms";
-import type { Floor, Room, Wall } from "./scene";
+import type { Floor, Opening, Room, Wall } from "./scene";
 
 export type Colour = readonly [number, number, number];
+type Vec3 = readonly [number, number, number];
 
 /** Triangles, not indexed: nine position numbers, nine normal numbers and
  * nine colour numbers for each. */
@@ -32,6 +33,8 @@ export interface MeshData {
 export interface WallPart {
   id: string;
   data: MeshData;
+  /** The panes of its windows, to be drawn see-through. */
+  glass?: MeshData;
   /** The middle of the wall on the floor, in model axes: [x, z]. */
   centre: [number, number];
   height: number;
@@ -54,6 +57,8 @@ export interface MeshOptions {
   outsideColour: Colour;
   /** The cut tops of the walls. */
   wallTopColour: Colour;
+  /** Window panes. */
+  glassColour?: Colour;
   /** Draw this room's floor in `highlightColour`. */
   highlightRoom?: string | null;
   highlightColour?: Colour;
@@ -266,52 +271,158 @@ export function buildFloorMesh(floor: Floor, options: MeshOptions): FloorMesh {
     flat(slabs, polygon, 0.001 * (nesting.get(room.id) ?? 0), colour);
   }
 
+  // A flat four-sided face, wound to face the way `normal` points.
+  const quad = (
+    mesh: MeshData,
+    corners: readonly [Vec3, Vec3, Vec3, Vec3],
+    normal: Vec3,
+    colour: Colour,
+  ) => {
+    const [a, b, c, d] = corners;
+    const ux = b[0] - a[0];
+    const uy = b[1] - a[1];
+    const uz = b[2] - a[2];
+    const vx = c[0] - a[0];
+    const vy = c[1] - a[1];
+    const vz = c[2] - a[2];
+    const facing =
+      (uy * vz - uz * vy) * normal[0] + (uz * vx - ux * vz) * normal[1] + (ux * vy - uy * vx) * normal[2];
+    if (Math.abs(facing) < 1e-12) return;
+    push(mesh, facing > 0 ? [a, b, c, a, c, d] : [a, c, b, a, d, c], normal, colour);
+  };
+
   const footprints = wallFootprints(floor);
   const sides = wallSides(floor);
+  const openingsOf = new Map<string, Opening[]>();
+  for (const opening of floor.openings) {
+    openingsOf.set(opening.wall, [...(openingsOf.get(opening.wall) ?? []), opening]);
+  }
+  const glassColour = options.glassColour ?? [0.72, 0.86, 0.92];
   const wallParts: WallPart[] = [];
   for (const wall of floor.walls) {
     const outline = footprints.get(wall.id);
     if (!outline) continue;
     const part: MeshData = { positions: [], normals: [], colours: [] };
+    const glass: MeshData = { positions: [], normals: [], colours: [] };
     const height = Math.min(wall.height ?? floor.wall_height, options.maxWallHeight ?? Infinity);
     const [leftRoom, rightRoom] = sides.get(wall.id) ?? [undefined, undefined];
     const leftColour = leftRoom ? hexColour(leftRoom.wall_colour) : options.outsideColour;
     const rightColour = rightRoom ? hexColour(rightRoom.wall_colour) : options.outsideColour;
+
+    // The wall's own line: from its first end A along the unit vector d.
+    const start = outline[0];
+    const end = outline[3];
+    const length = distance(start, end);
+    const dx = (end.x - start.x) / length;
+    const dy = (end.y - start.y) / length;
+    const half = wall.thickness / 2;
+    // The holes in it, as stretches along that line, bottom and top.
+    const holes = (openingsOf.get(wall.id) ?? [])
+      .map((opening) => ({
+        from: Math.max(0, opening.offset),
+        to: Math.min(length, opening.offset + opening.width),
+        bottom: Math.min(opening.sill, height),
+        top: Math.min(opening.sill + opening.height, height),
+        window: opening.type === "window",
+      }))
+      .filter((hole) => hole.to - hole.from > 1e-4 && hole.top - hole.bottom > 1e-4)
+      .sort((p, q) => p.from - q.from);
+
     // The outline's winding decides which way "outwards" is for its edges.
     const turn = signedArea(outline) >= 0 ? 1 : -1;
     for (let i = 0; i < outline.length; i++) {
       const p = outline[i];
       const q = outline[(i + 1) % outline.length];
-      const length = distance(p, q);
-      if (length < 1e-6) continue;
-      const nx = (turn * (q.y - p.y)) / length;
-      const nz = (-turn * (q.x - p.x)) / length;
+      const edge = distance(p, q);
+      if (edge < 1e-6) continue;
+      const normal: Vec3 = [(turn * (q.y - p.y)) / edge, 0, (-turn * (q.x - p.x)) / edge];
       // Edge 1 is the left face, edge 4 the right; the rest are the joints.
       const colour = i === 1 ? leftColour : i === 4 ? rightColour : options.outsideColour;
-      const [first, second] = turn > 0 ? [q, p] : [p, q];
-      push(
-        part,
-        [
-          [first.x, 0, first.y],
-          [second.x, 0, second.y],
-          [second.x, height, second.y],
-          [first.x, 0, first.y],
-          [second.x, height, second.y],
-          [first.x, height, first.y],
-        ],
-        [nx, 0, nz],
-        colour,
-      );
+      const face = (from: Point, to: Point, bottom: number, top: number) =>
+        quad(
+          part,
+          [
+            [from.x, bottom, from.y],
+            [to.x, bottom, to.y],
+            [to.x, top, to.y],
+            [from.x, top, from.y],
+          ],
+          normal,
+          colour,
+        );
+      if ((i !== 1 && i !== 4) || holes.length === 0) {
+        face(p, q, 0, height);
+        continue;
+      }
+      // A long face: solid between the holes, and above and below each.
+      const along = (point: Point) => (point.x - start.x) * dx + (point.y - start.y) * dy;
+      const sp = along(p);
+      const lo = Math.min(sp, along(q));
+      const hi = Math.max(sp, along(q));
+      const at = (s: number): Point => ({ x: p.x + dx * (s - sp), y: p.y + dy * (s - sp) });
+      let cursor = lo;
+      for (const hole of holes) {
+        const from = Math.min(Math.max(hole.from, lo), hi);
+        const to = Math.min(Math.max(hole.to, lo), hi);
+        if (to - from < 1e-4) continue;
+        if (from > cursor) face(at(cursor), at(from), 0, height);
+        if (hole.bottom > 0) face(at(Math.max(from, cursor)), at(to), 0, hole.bottom);
+        if (hole.top < height) face(at(Math.max(from, cursor)), at(to), hole.top, height);
+        cursor = Math.max(cursor, to);
+      }
+      if (hi > cursor) face(at(cursor), at(hi), 0, height);
     }
+
+    // The inside of each hole: the two jambs, the sill and the head; and for a
+    // window, a pane down the middle of the wall.
+    const onLine = (s: number, across: number): Point => ({
+      x: start.x + dx * s - dy * across,
+      y: start.y + dy * s + dx * across,
+    });
+    for (const hole of holes) {
+      const corner = (s: number, across: number, y: number): Vec3 => {
+        const point = onLine(s, across);
+        return [point.x, y, point.y];
+      };
+      const reveal = options.outsideColour;
+      for (const [s, facing] of [[hole.from, 1], [hole.to, -1]] as const) {
+        quad(
+          part,
+          [corner(s, half, hole.bottom), corner(s, -half, hole.bottom), corner(s, -half, hole.top), corner(s, half, hole.top)],
+          [dx * facing, 0, dy * facing],
+          reveal,
+        );
+      }
+      const across = (y: number, up: 1 | -1) =>
+        quad(
+          part,
+          [corner(hole.from, half, y), corner(hole.to, half, y), corner(hole.to, -half, y), corner(hole.from, -half, y)],
+          [0, up, 0],
+          reveal,
+        );
+      if (hole.bottom > 0) across(hole.bottom, 1);
+      if (hole.top < height) across(hole.top, -1);
+      if (hole.window) {
+        const pane: [Vec3, Vec3, Vec3, Vec3] = [
+          corner(hole.from, 0, hole.bottom),
+          corner(hole.to, 0, hole.bottom),
+          corner(hole.to, 0, hole.top),
+          corner(hole.from, 0, hole.top),
+        ];
+        quad(glass, pane, [-dy, 0, dx], glassColour);
+        quad(glass, pane, [dy, 0, -dx], glassColour);
+      }
+    }
+
     flat(part, outline, height, options.wallTopColour);
     walls.positions.push(...part.positions);
     walls.normals.push(...part.normals);
     walls.colours.push(...part.colours);
-    // outline[0] and outline[3] are the wall's two ends.
     wallParts.push({
       id: wall.id,
       data: part,
-      centre: [(outline[0].x + outline[3].x) / 2, (outline[0].y + outline[3].y) / 2],
+      ...(glass.positions.length > 0 ? { glass } : {}),
+      centre: [(start.x + end.x) / 2, (start.y + end.y) / 2],
       height,
     });
   }

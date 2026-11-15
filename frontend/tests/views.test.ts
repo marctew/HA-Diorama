@@ -36,6 +36,7 @@ const house = (...floors: { id: string; name: string; elevation?: number }[]): H
   revision: 1,
   settings: { name: "Number 12" },
   floors: floors.map((floor) => ({ elevation: 0, ha_floor_id: null, ...floor })),
+  cameras: [],
 });
 
 describe("roomOnly", () => {

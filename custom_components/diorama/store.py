@@ -161,10 +161,12 @@ class DioramaStore:
         """Take a floor out of the house and delete what was drawn on it."""
         async with self._lock:
             self._require_floor(floor_id)
-            house = {
-                "settings": self._house["settings"],
-                "floors": [m for m in self._house["floors"] if m["id"] != floor_id],
-            }
+            house = validate_house(
+                {
+                    **self._house,
+                    "floors": [m for m in self._house["floors"] if m["id"] != floor_id],
+                }
+            )
             await self._async_write_house(house, self._house["revision"] + 1)
             await self._floor_store(floor_id).async_remove()
             self._floors.pop(floor_id, None)

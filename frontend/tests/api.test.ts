@@ -14,6 +14,7 @@ const house: House = {
   revision: 4,
   settings: { name: "Home" },
   floors: [{ id: "f1", name: "Ground", elevation: 0, ha_floor_id: null }],
+  cameras: [],
 };
 
 const floor: Floor = {

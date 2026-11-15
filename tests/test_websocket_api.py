@@ -58,6 +58,7 @@ async def test_new_house_is_empty(hass: HomeAssistant, setup, hass_ws_client) ->
             "revision": 0,
             "settings": {"name": "Home"},
             "floors": [],
+            "cameras": [],
         }
     }
 
@@ -437,3 +438,47 @@ def _without_revisions(export: dict[str, Any]) -> dict[str, Any]:
         for floor_id, floor in export["floors"].items()
     }
     return {"house": house, "floors": floors}
+
+
+async def test_cameras_are_saved_and_survive_floor_changes(
+    hass: HomeAssistant, setup, hass_ws_client
+) -> None:
+    client = await hass_ws_client(hass)
+    await _house_with_floors(client, GROUND, UPSTAIRS)
+    cameras = [
+        {
+            "id": "c1",
+            "name": "Hall",
+            "floor": "f1",
+            "position": [1, 2, 3],
+            "target": [0, 1, 0],
+        },
+        {
+            "id": "c2",
+            "name": "Landing",
+            "floor": "f2",
+            "position": [4, 5, 6],
+            "target": [0, 1, 0],
+        },
+    ]
+    house = (
+        await _ok(
+            client,
+            "house/save",
+            revision=1,
+            house={"floors": [GROUND, UPSTAIRS], "cameras": cameras},
+        )
+    )["house"]
+    assert [camera["name"] for camera in house["cameras"]] == ["Hall", "Landing"]
+
+    # Deleting a floor keeps the views; the one saved on it falls to the ground.
+    house = (await _ok(client, "floor/delete", floor_id="f2"))["house"]
+    assert [camera["floor"] for camera in house["cameras"]] == ["f1", None]
+
+    # A save that leaves cameras out clears them, like any other field.
+    house = (
+        await _ok(
+            client, "house/save", revision=house["revision"], house={"floors": [GROUND]}
+        )
+    )["house"]
+    assert house["cameras"] == []

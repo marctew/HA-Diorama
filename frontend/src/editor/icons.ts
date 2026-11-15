@@ -19,6 +19,12 @@ const PATHS = {
   close: svg`<path d="M6 6l12 12M18 6 6 18" />`,
   device: svg`<path d="M9 17.5h6M10 20.5h4" /><path d="M8.2 14.5a6 6 0 1 1 7.6 0c-.5.5-.8 1-.8 1.7H9c0-.7-.3-1.2-.8-1.7z" />`,
   unlink: svg`<path d="M9.5 14.5 14.5 9.5M8 11l-2 2a3.5 3.5 0 0 0 5 5l2-2M16 13l2-2a3.5 3.5 0 0 0-5-5l-2 2" />`,
+  opening: svg`<path d="M4 21h16M6 21V4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21" /><path d="M14.5 12.5h.01" stroke-width="2.6" />`,
+  image: svg`<rect x="3" y="4" width="18" height="16" rx="2" /><path d="m3 16 5-5 4 4 3-3 6 6" /><circle cx="15.5" cy="9" r="1.5" />`,
+  camera: svg`<path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.5" />`,
+  layers: svg`<path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5M3 17.5l9 5 9-5" opacity="0.55" />`,
+  up: svg`<path d="m6 14 6-6 6 6" />`,
+  down: svg`<path d="m6 10 6 6 6-6" />`,
   cube: svg`<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" />`,
 };
 

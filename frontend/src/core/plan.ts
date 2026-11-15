@@ -11,6 +11,7 @@ import {
   type Point,
 } from "./geometry";
 import { newId, type MakeId } from "./ids";
+import { fitOpenings } from "./openings";
 import { syncFixtures } from "./fixtures";
 import { assignItemRooms } from "./items";
 import { detectRooms } from "./rooms";
@@ -35,7 +36,7 @@ export function commit(floor: Floor, makeId: MakeId = newId): Floor {
     rooms,
     items: assignItemRooms({ ...tidy, rooms }).items,
   };
-  return syncFixtures(withRooms);
+  return syncFixtures(fitOpenings(withRooms));
 }
 
 function normalise(floor: Floor, makeId: MakeId): Floor {

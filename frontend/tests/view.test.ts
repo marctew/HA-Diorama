@@ -34,6 +34,20 @@ describe("view", () => {
     expect(corner.y).toBeGreaterThanOrEqual(79);
   });
 
+  it("keeps other points in view too, such as a plan image", () => {
+    const floor = rectangle(emptyFloor(), counter(), 0, 0, 4, 2);
+    const fitted = fit(floor, 1000, 600, 80, [{ x: -6, y: -4 }, { x: 10, y: 8 }]);
+    for (const point of [{ x: -6, y: -4 }, { x: 10, y: 8 }]) {
+      const screen = toScreen(fitted, point);
+      expect(screen.x).toBeGreaterThanOrEqual(79);
+      expect(screen.x).toBeLessThanOrEqual(921);
+      expect(screen.y).toBeGreaterThanOrEqual(79);
+      expect(screen.y).toBeLessThanOrEqual(521);
+    }
+    // And an image alone, before anything is drawn.
+    expect(fit(emptyFloor(), 1000, 600, 80, [{ x: 0, y: 0 }, { x: 10, y: 5 }]).scale).toBeCloseTo(84);
+  });
+
   it("puts the origin in the middle of an empty floor", () => {
     expect(fit(emptyFloor(), 800, 600)).toEqual({ scale: 60, x: 400, y: 300 });
   });
@@ -72,11 +86,11 @@ describe("selection", () => {
   it("drops what the floor no longer has", () => {
     const floor = rectangle(emptyFloor(), counter(), 0, 0, 4, 3);
     const withSofa = { ...floor, items: [{ id: "i1", model: "basics/sofa_2", x: 1, y: 1, z: 0, rotation: 0, scale: 1, room: null }] };
-    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], fixtures: [], room: floor.rooms[0].id };
+    const kept = { vertices: [floor.vertices[0].id], walls: [floor.walls[0].id], items: ["i1"], fixtures: [], openings: [], room: floor.rooms[0].id };
     expect(prune(kept, withSofa)).toBe(kept);
     expect(
-      prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], items: ["i1", "i9"], fixtures: ["x9"], room: "gone" }, withSofa),
-    ).toEqual({ vertices: [floor.vertices[0].id], walls: [], items: ["i1"], fixtures: [], room: null });
+      prune({ vertices: ["gone", floor.vertices[0].id], walls: ["gone"], items: ["i1", "i9"], fixtures: ["x9"], openings: ["o9"], room: "gone" }, withSofa),
+    ).toEqual({ vertices: [floor.vertices[0].id], walls: [], items: ["i1"], fixtures: [], openings: [], room: null });
     expect(selectionCount(kept)).toBe(3);
   });
 });

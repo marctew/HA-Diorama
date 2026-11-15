@@ -39,6 +39,8 @@ export interface HomeAssistant {
     target?: { entity_id?: string | string[] },
   ): Promise<unknown>;
   callWS<T>(message: { type: string; [key: string]: unknown }): Promise<T>;
+  /** Fetch a URL of Home Assistant as the signed-in user. */
+  fetchWithAuth(path: string, init?: RequestInit): Promise<Response>;
   connection: {
     subscribeMessage<T>(
       callback: (message: T) => void,

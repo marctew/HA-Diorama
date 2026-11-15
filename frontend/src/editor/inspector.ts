@@ -7,7 +7,8 @@ import { commit, moveVertices, setWallLength, setWallThickness } from "../core/p
 import { roomPolygon } from "../core/rooms";
 import { fixtureVisual, tapAction } from "../core/bindings";
 import { MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
-import type { Fixture, Floor, Item, Room } from "../core/scene";
+import { updateOpening } from "../core/openings";
+import type { Fixture, Floor, Item, Opening, Room } from "../core/scene";
 import {
   formatArea,
   formatLength,
@@ -59,6 +60,10 @@ export class DioramaInspector extends LitElement {
       if (room) return this.renderRoom(floor, room);
     }
     if (count > 1) return this.renderSeveral(count, selection);
+    if (selection.openings.length === 1) {
+      const opening = floor.openings.find((candidate) => candidate.id === selection.openings[0]);
+      if (opening) return this.renderOpening(floor, opening);
+    }
     if (selection.fixtures.length === 1) {
       const fixture = floor.fixtures.find((candidate) => candidate.id === selection.fixtures[0]);
       if (fixture) return this.renderFixture(floor, fixture);
@@ -299,6 +304,46 @@ export class DioramaInspector extends LitElement {
     `;
   }
 
+  private renderOpening(floor: Floor, opening: Opening): TemplateResult {
+    const change = (patch: Partial<Opening>) => this.edit(updateOpening(floor, opening.id, patch));
+    const length = (label: string, key: "width" | "height" | "sill" | "offset") => html`
+      <label>
+        <span>${label} (${this.units === "metric" ? "m" : "ft"})</span>
+        <input
+          type="text"
+          inputmode="decimal"
+          .value=${opening[key] === 0 ? "0" : lengthForInput(opening[key], this.units)}
+          @change=${(event: Event) => {
+            const text = value(event).trim();
+            const metres = /^0+([.,]0*)?$/.test(text) ? 0 : parseLength(text, this.units);
+            if (metres === undefined) {
+              (event.target as HTMLInputElement).value = lengthForInput(opening[key], this.units);
+            } else {
+              change({ [key]: metres });
+            }
+          }}
+        />
+      </label>
+    `;
+    return html`
+      <h2>${opening.type === "door" ? "Door" : "Window"}</h2>
+      <label>
+        <span>Kind</span>
+        <select @change=${(event: Event) => change({ type: value(event) as Opening["type"] })}>
+          <option value="door" ?selected=${opening.type === "door"}>Door</option>
+          <option value="window" ?selected=${opening.type === "window"}>Window</option>
+        </select>
+      </label>
+      <div class="pair">${length("Width", "width")}${length("Height", "height")}</div>
+      <div class="pair">
+        ${length("From the wall's end", "offset")}
+        ${opening.type === "window" ? length("Sill height", "sill") : nothing}
+      </div>
+      <p class="help">Drag it along the wall, or onto another wall.</p>
+      ${this.renderDelete(opening.type === "door" ? "Delete door" : "Delete window")}
+    `;
+  }
+
   private renderFixture(floor: Floor, fixture: Fixture): TemplateResult {
     const entity = this.hass?.states[fixture.entity_id];
     const friendly = entity?.attributes.friendly_name;
@@ -426,10 +471,59 @@ export class DioramaInspector extends LitElement {
         <dt>Floor area</dt>
         <dd>${formatArea(total, this.units)}</dd>
       </dl>
+      <h3>Trace over a plan</h3>
+      ${floor.trace
+        ? html`
+            <label>
+              <span>How strongly the image shows</span>
+              <input
+                type="range"
+                min="0.1"
+                max="1"
+                step="0.05"
+                .value=${String(floor.trace.opacity)}
+                @change=${(event: Event) =>
+                  this.edit({ ...floor, trace: { ...floor.trace!, opacity: Number(value(event)) } })}
+              />
+            </label>
+            <div class="actions tight">
+              <button class="plain" @click=${this.fire("inspector-trace-scale")}>
+                ${icon("fit")} Set the scale
+              </button>
+              <button class="plain" @click=${() => this.edit({ ...floor, trace: null })}>
+                ${icon("trash")} Remove
+              </button>
+            </div>
+            <p class="help spaced">
+              To set the scale, click two points on the image and say how far apart they really
+              are.
+            </p>
+          `
+        : html`
+            <label class="file">
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                @change=${(event: Event) => {
+                  const input = event.target as HTMLInputElement;
+                  const file = input.files?.[0];
+                  input.value = "";
+                  if (file) {
+                    this.dispatchEvent(new CustomEvent("inspector-trace-upload", { detail: { file } }));
+                  }
+                }}
+              />
+              <span class="plain">${icon("image")} Choose an image</span>
+            </label>
+            <p class="help spaced">
+              A floor plan from the estate agent or a photo of a drawing: draw your walls over it.
+            </p>
+          `}
       <h3>Drawing</h3>
       <ul class="tips">
         <li>
-          <kbd>W</kbd> walls, <kbd>F</kbd> furniture, <kbd>B</kbd> devices, <kbd>V</kbd> select
+          <kbd>W</kbd> walls, <kbd>O</kbd> doors and windows, <kbd>F</kbd> furniture,
+          <kbd>B</kbd> devices, <kbd>V</kbd> select
         </li>
         <li>Click to place each corner; close the loop to make a room</li>
         <li>Type a length and press <kbd>Enter</kbd> for an exact wall</li>
@@ -441,6 +535,10 @@ export class DioramaInspector extends LitElement {
         <li><kbd>Del</kbd> deletes, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes</li>
       </ul>
     `;
+  }
+
+  private fire(name: string): () => void {
+    return () => this.dispatchEvent(new CustomEvent(name));
   }
 
   private renderDelete(label: string): TemplateResult {
@@ -614,6 +712,36 @@ export class DioramaInspector extends LitElement {
       .actions .danger,
       .actions .plain {
         margin-top: 0;
+      }
+      .actions.tight {
+        margin-top: 0;
+      }
+      .help.spaced {
+        margin-top: 10px;
+      }
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--diorama-accent);
+      }
+      label.file {
+        display: inline-block;
+        margin: 0;
+        cursor: pointer;
+      }
+      label.file input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+      label.file > span.plain {
+        margin: 0;
+        font-size: 14px;
+        color: var(--diorama-text);
+      }
+      label.file input:focus-visible + span {
+        outline: 2px solid var(--diorama-accent);
+        outline-offset: 1px;
       }
       .plain {
         display: inline-flex;

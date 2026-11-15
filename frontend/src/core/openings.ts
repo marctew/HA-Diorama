@@ -1,0 +1,193 @@
+// Doors and windows. An opening sits on a wall, `offset` metres along it from
+// the wall's first end, and is `width` wide; `sill` is how far its bottom is
+// above the floor. Like plan.ts, every function returns a new floor.
+
+import { distance, projectOnSegment, type Point } from "./geometry";
+import { newId, type MakeId } from "./ids";
+import type { Floor, Opening } from "./scene";
+
+export type OpeningType = Opening["type"];
+
+export const OPENING_DEFAULTS: Readonly<
+  Record<OpeningType, { width: number; height: number; sill: number }>
+> = {
+  door: { width: 0.8, height: 2.0, sill: 0 },
+  window: { width: 1.2, height: 1.2, sill: 0.9 },
+};
+
+/** The narrowest opening worth having, and the least wall to leave either side. */
+const MIN_WIDTH = 0.3;
+
+interface WallLine {
+  a: Point;
+  b: Point;
+  length: number;
+}
+
+function wallLine(floor: Pick<Floor, "vertices" | "walls">, wallId: string): WallLine | undefined {
+  const wall = floor.walls.find((candidate) => candidate.id === wallId);
+  const a = wall && floor.vertices.find((vertex) => vertex.id === wall.a);
+  const b = wall && floor.vertices.find((vertex) => vertex.id === wall.b);
+  if (!a || !b) return undefined;
+  const length = distance(a, b);
+  return length > 0 ? { a, b, length } : undefined;
+}
+
+/** Where along a wall an opening of a given width goes so that its middle is
+ * as near `point` as the wall allows. */
+function offsetFor(line: WallLine, width: number, point: Point): number {
+  const along = projectOnSegment(point, line.a, line.b).t * line.length;
+  return round(Math.min(Math.max(along - width / 2, 0), line.length - width));
+}
+
+/** The wall nearest a point, if one is within `tolerance` of it. */
+export function nearestWall(
+  floor: Pick<Floor, "vertices" | "walls">,
+  point: Point,
+  tolerance: number,
+): string | undefined {
+  const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
+  let best: { id: string; distance: number } | undefined;
+  for (const wall of floor.walls) {
+    const a = position.get(wall.a);
+    const b = position.get(wall.b);
+    if (!a || !b) continue;
+    const d = projectOnSegment(point, a, b).distance;
+    if (d <= Math.max(tolerance, wall.thickness / 2) && (!best || d < best.distance)) {
+      best = { id: wall.id, distance: d };
+    }
+  }
+  return best?.id;
+}
+
+/** What a new opening on a wall would be, without adding it: for the preview
+ * and for adding. Undefined if the wall is too short to take one. */
+export function openingAt(
+  floor: Pick<Floor, "vertices" | "walls">,
+  wallId: string,
+  type: OpeningType,
+  point: Point,
+): Omit<Opening, "id"> | undefined {
+  const line = wallLine(floor, wallId);
+  if (!line) return undefined;
+  const defaults = OPENING_DEFAULTS[type];
+  const width = Math.min(defaults.width, round(line.length - 0.1));
+  if (width < MIN_WIDTH) return undefined;
+  return {
+    wall: wallId,
+    type,
+    offset: offsetFor(line, width, point),
+    width,
+    height: defaults.height,
+    sill: defaults.sill,
+    entity_id: null,
+  };
+}
+
+export function placeOpening(
+  floor: Floor,
+  wallId: string,
+  type: OpeningType,
+  point: Point,
+  makeId: MakeId = newId,
+): { floor: Floor; id?: string } {
+  const opening = openingAt(floor, wallId, type, point);
+  if (!opening) return { floor };
+  const id = makeId("o");
+  return { floor: { ...floor, openings: [...floor.openings, { ...opening, id }] }, id };
+}
+
+/** Slide an opening so that its middle is near `point`, on its own wall or on
+ * another. It is narrowed if the new wall is shorter than it. */
+export function moveOpening(floor: Floor, id: string, wallId: string, point: Point): Floor {
+  const line = wallLine(floor, wallId);
+  if (!line) return floor;
+  return change(floor, id, (opening) => {
+    const width = Math.min(opening.width, round(line.length));
+    if (width < MIN_WIDTH) return opening;
+    return { ...opening, wall: wallId, width, offset: offsetFor(line, width, point) };
+  });
+}
+
+/** Change an opening's size, place or type, kept within its wall. */
+export function updateOpening(floor: Floor, id: string, patch: Partial<Opening>): Floor {
+  return change(floor, id, (opening) => {
+    const next = { ...opening, ...patch, id: opening.id };
+    const line = wallLine(floor, next.wall);
+    if (!line) return opening;
+    if (patch.type && patch.type !== opening.type) {
+      // A door reaches the floor; a new window starts at sill height.
+      next.sill = patch.sill ?? OPENING_DEFAULTS[patch.type].sill;
+      next.height = patch.height ?? OPENING_DEFAULTS[patch.type].height;
+    }
+    next.width = round(Math.min(Math.max(next.width, MIN_WIDTH), line.length));
+    next.offset = round(Math.min(Math.max(next.offset, 0), line.length - next.width));
+    next.height = round(Math.min(Math.max(next.height, 0.1), 6));
+    next.sill = round(Math.min(Math.max(next.sill, 0), 6));
+    return next;
+  });
+}
+
+export function deleteOpenings(floor: Floor, ids: ReadonlySet<string>): Floor {
+  if (!floor.openings.some((opening) => ids.has(opening.id))) return floor;
+  return { ...floor, openings: floor.openings.filter((opening) => !ids.has(opening.id)) };
+}
+
+/** Keep every opening within its wall after walls have changed: slid back or
+ * narrowed if the wall got shorter, removed if it is now too short for one. */
+export function fitOpenings(floor: Floor): Floor {
+  let changed = false;
+  const openings: Opening[] = [];
+  for (const opening of floor.openings) {
+    const line = wallLine(floor, opening.wall);
+    if (!line || line.length < MIN_WIDTH) {
+      changed = true;
+      continue;
+    }
+    const width = round(Math.min(opening.width, line.length));
+    const offset = round(Math.min(Math.max(opening.offset, 0), line.length - width));
+    if (width === opening.width && offset === opening.offset) {
+      openings.push(opening);
+    } else {
+      changed = true;
+      openings.push({ ...opening, width, offset });
+    }
+  }
+  return changed ? { ...floor, openings } : floor;
+}
+
+/** The two ends of an opening on the plan, along the middle of its wall. */
+export function openingEnds(
+  floor: Pick<Floor, "vertices" | "walls">,
+  opening: Pick<Opening, "wall" | "offset" | "width">,
+): { start: Point; end: Point; thickness: number } | undefined {
+  const line = wallLine(floor, opening.wall);
+  const wall = floor.walls.find((candidate) => candidate.id === opening.wall);
+  if (!line || !wall) return undefined;
+  const at = (along: number): Point => ({
+    x: line.a.x + ((line.b.x - line.a.x) * along) / line.length,
+    y: line.a.y + ((line.b.y - line.a.y) * along) / line.length,
+  });
+  return {
+    start: at(opening.offset),
+    end: at(opening.offset + opening.width),
+    thickness: wall.thickness,
+  };
+}
+
+function change(floor: Floor, id: string, edit: (opening: Opening) => Opening): Floor {
+  let changed = false;
+  const openings = floor.openings.map((opening) => {
+    if (opening.id !== id) return opening;
+    const next = edit(opening);
+    const same = (Object.keys(next) as (keyof Opening)[]).every((key) => next[key] === opening[key]);
+    if (same) return opening;
+    changed = true;
+    return next;
+  });
+  return changed ? { ...floor, openings } : floor;
+}
+
+function round(value: number): number {
+  return Number(value.toFixed(4));
+}

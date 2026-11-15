@@ -7,7 +7,11 @@ import { EMPTY_CATALOGUE, type Catalogue, type CatalogueModel } from "../core/ca
 import type { FixtureVisual } from "../core/bindings";
 import { deleteFixtures } from "../core/fixtures";
 import { deleteItems, duplicateItems, rotateItems, ROTATE_STEP } from "../core/items";
+import type { Point } from "../core/geometry";
+import { deleteOpenings, type OpeningType } from "../core/openings";
 import { deleteVertices, deleteWalls } from "../core/plan";
+import { calibrate, newTrace } from "../core/trace";
+import { parseLength } from "../core/units";
 import type { Floor, SceneEvent } from "../core/scene";
 import type { UnitSystem } from "../core/units";
 import { FixtureStates } from "../shared/fixture-state";
@@ -63,6 +67,14 @@ export class DioramaEditor extends LitElement {
   @state() private placingEntity?: string;
   /** What each fixture looks like now, for the badges in the plan. */
   @state() private visuals: ReadonlyMap<string, FixtureVisual> = new Map();
+  /** What the door and window tool places. */
+  @state() private openingType: OpeningType = "door";
+  /** The plan image being traced over, once fetched. */
+  @state() private traceImage?: { id: string; url: string; width: number; height: number };
+  /** Picking two points on the image, to set its scale. */
+  @state() private calibrating = false;
+  /** The two points picked, waiting for the real distance between them. */
+  @state() private measured?: { first: Point; second: Point };
   @state() private viewMode: ViewMode = "split";
   /** The 3D view's code has arrived. It is only fetched when first shown. */
   @state() private sceneLoaded = false;
@@ -130,6 +142,11 @@ export class DioramaEditor extends LitElement {
     if (this.fixtureStates.update(this.hass, this.floor?.fixtures ?? [])) {
       this.visuals = this.fixtureStates.visuals;
     }
+    const traceId = this.floor?.trace?.image;
+    if (traceId !== this.traceWanted) {
+      this.traceWanted = traceId;
+      void this.loadTrace(traceId);
+    }
     if ((changed as Map<PropertyKey, unknown>).has("floor")) {
       this.sceneFloors = this.floor ? [{ floor: this.floor, elevation: 0 }] : [];
     }
@@ -137,6 +154,75 @@ export class DioramaEditor extends LitElement {
   }
 
   private sceneLoading = false;
+  private traceWanted?: string;
+
+  // The plan image to trace over.
+
+  /** Fetch an uploaded image (it needs the user's sign-in, so it cannot just
+   * be given to the page as an address) and find out how big it is. */
+  private async loadTrace(id: string | undefined): Promise<void> {
+    const previous = this.traceImage;
+    if (!id || !this.hass) {
+      this.traceImage = undefined;
+    } else if (previous?.id !== id) {
+      try {
+        const response = await this.hass.fetchWithAuth(`/api/diorama/trace/${id}`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const picture = await measureImage(await response.blob());
+        if (this.traceWanted !== id) {
+          URL.revokeObjectURL(picture.url);
+          return;
+        }
+        this.traceImage = { id, ...picture };
+      } catch (error) {
+        console.warn("Diorama: the plan image could not be loaded", error);
+        this.traceImage = undefined;
+      }
+    }
+    if (previous && previous !== this.traceImage) URL.revokeObjectURL(previous.url);
+  }
+
+  private async uploadTrace(file: File): Promise<void> {
+    const floor = this.floor;
+    if (!this.hass || !floor) return;
+    this.saveError = undefined;
+    try {
+      const picture = await measureImage(file);
+      const response = await this.hass.fetchWithAuth("/api/diorama/trace", {
+        method: "POST",
+        body: file,
+      });
+      if (!response.ok) {
+        URL.revokeObjectURL(picture.url);
+        const reply = (await response.json().catch(() => ({}))) as { message?: string };
+        throw new Error(reply.message ?? `The upload failed (${response.status}).`);
+      }
+      const { id } = (await response.json()) as { id: string };
+      // Shown at once from the file in hand; no need to fetch it back.
+      if (this.traceImage) URL.revokeObjectURL(this.traceImage.url);
+      this.traceWanted = id;
+      this.traceImage = { id, ...picture };
+      const xs = floor.vertices.map((vertex) => vertex.x);
+      const ys = floor.vertices.map((vertex) => vertex.y);
+      const centre = xs.length
+        ? { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 }
+        : { x: 0, y: 0 };
+      this.applyEdit({ ...floor, trace: newTrace(id, picture.width, picture.height, centre) });
+      this.plan?.fitToFloor();
+    } catch (error) {
+      this.saveError = error instanceof Error ? error.message : "The image could not be used.";
+    }
+  }
+
+  private finishCalibration(text: string): void {
+    const floor = this.floor;
+    const measured = this.measured;
+    const metres = parseLength(text, this.units);
+    if (!floor?.trace || !measured || metres === undefined) return;
+    this.applyEdit({ ...floor, trace: calibrate(floor.trace, measured.first, measured.second, metres) });
+    this.measured = undefined;
+    this.calibrating = false;
+  }
 
   private async loadScene(): Promise<void> {
     if (this.sceneLoading) return;
@@ -276,7 +362,8 @@ export class DioramaEditor extends LitElement {
   private deleteSelection(): void {
     const floor = this.floor;
     if (!floor || isEmpty(this.selection)) return;
-    let result = deleteFixtures(floor, new Set(this.selection.fixtures));
+    let result = deleteOpenings(floor, new Set(this.selection.openings));
+    result = deleteFixtures(result, new Set(this.selection.fixtures));
     result = deleteItems(result, new Set(this.selection.items));
     result = deleteWalls(result, new Set(this.selection.walls));
     result = deleteVertices(result, new Set(this.selection.vertices));
@@ -340,9 +427,17 @@ export class DioramaEditor extends LitElement {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.mode === "3d" && !(event.ctrlKey || event.metaKey)) return;
-    if (this.narrow || !this.floor || isTyping(event)) return;
+    if (this.narrow || !this.floor) return;
     const command = event.ctrlKey || event.metaKey;
     const key = event.key;
+    // Saving works from anywhere, a field included; the browser's own "save
+    // page" is never what is wanted here.
+    if (command && key.toLowerCase() === "s") {
+      event.preventDefault();
+      void this.save();
+      return;
+    }
+    if (isTyping(event)) return;
     if (command) {
       const lower = key.toLowerCase();
       if (lower === "z") {
@@ -367,6 +462,11 @@ export class DioramaEditor extends LitElement {
       return;
     }
     if (key === "Escape") {
+      if (this.calibrating || this.measured) {
+        this.calibrating = false;
+        this.measured = undefined;
+        return;
+      }
       if (this.plan?.cancel()) return;
       if (this.placing) this.placing = undefined;
       else if (this.placingEntity) this.placingEntity = undefined;
@@ -375,6 +475,8 @@ export class DioramaEditor extends LitElement {
     } else if (key.toLowerCase() === "r") {
       const step = event.shiftKey ? -ROTATE_STEP : ROTATE_STEP;
       if (!this.plan?.rotatePlacing(step)) this.rotateSelection(step);
+    } else if (key.toLowerCase() === "o" && !this.plan?.drawing) {
+      this.setTool("opening");
     } else if (key.toLowerCase() === "f" && !this.plan?.drawing) {
       this.setTool("furniture");
     } else if (key.toLowerCase() === "b" && !this.plan?.drawing) {
@@ -428,7 +530,14 @@ export class DioramaEditor extends LitElement {
             .placing=${this.placing}
             .visuals=${this.visuals}
             .placingEntity=${this.placingEntity}
+            .openingType=${this.openingType}
+            .traceImage=${this.traceImage}
+            ?calibrating=${this.calibrating}
             .units=${this.units}
+            @plan-calibrate=${(event: CustomEvent<{ first: Point; second: Point }>) => {
+              this.measured = event.detail;
+              this.calibrating = false;
+            }}
             @plan-edit=${(event: CustomEvent<{ floor: Floor; placedFixture?: string }>) => {
               this.applyEdit(event.detail.floor);
               // A device goes on the floor once: the next pick is another one.
@@ -454,6 +563,13 @@ export class DioramaEditor extends LitElement {
             @inspector-edit=${(event: CustomEvent<{ floor: Floor }>) =>
               this.applyEdit(event.detail.floor)}
             @inspector-delete=${this.deleteSelection}
+            @inspector-trace-upload=${(event: CustomEvent<{ file: File }>) =>
+              this.uploadTrace(event.detail.file)}
+            @inspector-trace-scale=${() => {
+              this.setTool("select");
+              this.measured = undefined;
+              this.calibrating = true;
+            }}
             @inspector-rotate=${() => this.rotateSelection(ROTATE_STEP)}
             @inspector-duplicate=${this.duplicateSelection}
           ></diorama-inspector>`}
@@ -503,6 +619,7 @@ export class DioramaEditor extends LitElement {
         ${this.mode === "3d"
           ? nothing
           : html`${tool("select", "Select and move", "V")} ${tool("wall", "Draw walls", "W")}
+              ${tool("opening", "Add doors and windows", "O")}
               ${tool("furniture", "Add furniture", "F")} ${tool("device", "Place devices", "B")}
               <span class="divider"></span>`}
         <button
@@ -569,6 +686,26 @@ export class DioramaEditor extends LitElement {
         </div>
       `;
     }
+    if (this.calibrating) {
+      return html`<p class="hint">
+        Click two points on the image that you know the distance between. Esc to cancel.
+      </p>`;
+    }
+    if (this.tool === "opening") {
+      const kind = (id: OpeningType, label: string) => html`
+        <button
+          class=${this.openingType === id ? "active" : ""}
+          aria-pressed=${this.openingType === id}
+          @click=${() => (this.openingType = id)}
+        >
+          ${label}
+        </button>
+      `;
+      return html`<div class="choice" role="group" aria-label="What to add">
+        ${kind("door", "Door")} ${kind("window", "Window")}
+        <span>Click a wall to add one. Esc to finish.</span>
+      </div>`;
+    }
     if (this.tool === "wall") {
       return html`<p class="hint">
         Click to place each corner. Type a length and press Enter for an exact wall. Esc to finish.
@@ -599,6 +736,31 @@ export class DioramaEditor extends LitElement {
   }
 
   private renderNotices(): TemplateResult | typeof nothing {
+    if (this.measured) {
+      return html`
+        <form
+          class="notice"
+          @submit=${(event: SubmitEvent) => {
+            event.preventDefault();
+            const input = (event.target as HTMLFormElement).querySelector("input")!;
+            this.finishCalibration(input.value);
+          }}
+        >
+          <p><strong>How far apart are those two points really?</strong></p>
+          <div class="actions">
+            <input
+              type="text"
+              inputmode="decimal"
+              placeholder=${this.units === "metric" ? "In metres, like 3.2" : "In feet, like 10ft 6in"}
+              aria-label="Real distance"
+              autofocus
+            />
+            <button type="button" @click=${() => (this.measured = undefined)}>Cancel</button>
+            <button class="primary" type="submit">Set the scale</button>
+          </div>
+        </form>
+      `;
+    }
     if (this.conflict) {
       return html`
         <div class="notice" role="alert">
@@ -828,6 +990,55 @@ export class DioramaEditor extends LitElement {
         flex: 1;
         min-width: 0;
       }
+      .choice {
+        position: absolute;
+        left: 50%;
+        bottom: 16px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        box-sizing: border-box;
+        max-width: calc(100% - 200px);
+        padding: 4px 14px 4px 4px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+        border-radius: 999px;
+        background: var(--card-background-color, #fff);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+      .choice button {
+        height: 30px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 999px;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .choice button.active {
+        background: color-mix(in srgb, var(--diorama-accent) 16%, transparent);
+        color: var(--diorama-accent);
+        font-weight: 500;
+      }
+      .choice span {
+        margin-left: 8px;
+        color: var(--diorama-text-muted);
+      }
+      .notice input {
+        flex: 1;
+        min-width: 0;
+        height: 38px;
+        box-sizing: border-box;
+        padding: 0 10px;
+        border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.2));
+        border-radius: 10px;
+        background: var(--primary-background-color, #fafafa);
+        color: inherit;
+        font: inherit;
+      }
       .start {
         position: absolute;
         left: 50%;
@@ -908,12 +1119,31 @@ function writeSetting(storage: Settings, key: string, value: string): void {
   }
 }
 
+/** Find out how big an image is, and give it an address the page can show. */
+async function measureImage(blob: Blob): Promise<{ url: string; width: number; height: number }> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    if (image.naturalWidth < 1 || image.naturalHeight < 1) throw new Error("empty image");
+    return { url, width: image.naturalWidth, height: image.naturalHeight };
+  } catch {
+    URL.revokeObjectURL(url);
+    throw new Error("That file is not an image this browser can show.");
+  }
+}
+
 /** Keys typed into a field are for the field. */
 function isTyping(event: KeyboardEvent): boolean {
   for (const target of event.composedPath()) {
     if (!(target instanceof HTMLElement)) continue;
     if (target.isContentEditable) return true;
-    if (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return true;
+    if (target instanceof HTMLInputElement) {
+      // A slider, tick box or file chooser takes no typing.
+      return !["range", "checkbox", "radio", "file", "color", "button"].includes(target.type);
+    }
+    if (["TEXTAREA", "SELECT"].includes(target.tagName)) return true;
   }
   return false;
 }

@@ -15,7 +15,7 @@ from homeassistant.exceptions import ConfigEntryError
 from homeassistant.loader import async_get_integration
 from homeassistant.util.hass_dict import HassKey
 
-from . import websocket_api
+from . import http, websocket_api
 from .const import (
     ASSETS_DIR,
     ASSETS_URL,
@@ -81,6 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: DioramaConfigEntry) -> b
                 ),
             ]
         )
+        http.async_register(hass)
         hass.data[DATA_STATIC_REGISTERED] = True
 
     await panel_custom.async_register_panel(

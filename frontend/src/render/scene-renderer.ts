@@ -85,6 +85,12 @@ export class SceneRenderer {
   private readonly slabMaterial = new MeshLambertMaterial({ vertexColors: true });
   private readonly itemMaterial = new MeshLambertMaterial({ vertexColors: true });
   private readonly unknownMaterial = new MeshLambertMaterial({ color: 0xb8bcc2 });
+  private readonly glassMaterial = new MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
+  });
   private readonly unknownGeometry = new BoxGeometry(0.5, 0.5, 0.5).translate(0, 0.25, 0);
   private readonly fixtures: FixtureLayer;
   private readonly forgetRestored: () => void;
@@ -212,7 +218,14 @@ export class SceneRenderer {
       // A mesh per wall, so that each can be lowered on its own.
       for (const part of mesh.wallParts) {
         const wall = this.addMesh(part.data, this.wallMaterial, elevation, true);
-        if (wall) this.walls.push({ id: part.id, mesh: wall, centre: part.centre, height: part.height });
+        if (!wall) continue;
+        this.walls.push({ id: part.id, mesh: wall, centre: part.centre, height: part.height });
+        if (part.glass) {
+          // A child of its wall, so that it is lowered with it.
+          const pane = this.buildMesh(part.glass, this.glassMaterial);
+          pane.renderOrder = 1;
+          wall.add(pane);
+        }
       }
       // A fixture with a model of its own is drawn like furniture.
       const fixtureModels: Item[] = floor.fixtures
@@ -296,6 +309,7 @@ export class SceneRenderer {
     this.controls.dispose();
     this.clearHouse();
     this.itemMaterial.dispose();
+    this.glassMaterial.dispose();
     this.unknownMaterial.dispose();
     this.unknownGeometry.dispose();
     this.ground.geometry.dispose();
@@ -312,6 +326,15 @@ export class SceneRenderer {
     castShadow: boolean,
   ): Mesh | undefined {
     if (data.positions.length === 0) return undefined;
+    const mesh = this.buildMesh(data, material);
+    mesh.position.y = elevation;
+    mesh.castShadow = castShadow;
+    mesh.receiveShadow = true;
+    this.house.add(mesh);
+    return mesh;
+  }
+
+  private buildMesh(data: MeshData, material: MeshLambertMaterial): Mesh {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(data.positions), 3));
     geometry.setAttribute("normal", new BufferAttribute(new Float32Array(data.normals), 3));
@@ -327,11 +350,7 @@ export class SceneRenderer {
     }
     geometry.setAttribute("color", new BufferAttribute(colours, 3));
     const mesh = new Mesh(geometry, material);
-    mesh.position.y = elevation;
-    mesh.castShadow = castShadow;
-    mesh.receiveShadow = true;
     mesh.userData.ownsGeometry = true;
-    this.house.add(mesh);
     return mesh;
   }
 
@@ -341,7 +360,12 @@ export class SceneRenderer {
       this.house.remove(child);
       if (child instanceof InstancedMesh) child.dispose();
       // Furniture geometry is shared and cached; walls and floors are ours.
-      else if (child instanceof Mesh && child.userData.ownsGeometry) child.geometry.dispose();
+      else if (child instanceof Mesh && child.userData.ownsGeometry) {
+        child.geometry.dispose();
+        for (const pane of child.children) {
+          if (pane instanceof Mesh) pane.geometry.dispose();
+        }
+      }
     }
   }
 

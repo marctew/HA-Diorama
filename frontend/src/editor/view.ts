@@ -32,12 +32,20 @@ export function zoomAt(view: View, anchor: Point, factor: number): View {
 
 /** A view that shows the whole floor with some room around it, or the origin
  * at a comfortable scale when there is nothing drawn. */
-export function fit(floor: Pick<Floor, "vertices">, width: number, height: number, padding = 80): View {
-  if (floor.vertices.length === 0 || width <= 0 || height <= 0) {
+export function fit(
+  floor: Pick<Floor, "vertices">,
+  width: number,
+  height: number,
+  padding = 80,
+  /** Other points to keep in view, such as the corners of a plan image. */
+  also: readonly Point[] = [],
+): View {
+  const points: Point[] = [...floor.vertices, ...also];
+  if (points.length === 0 || width <= 0 || height <= 0) {
     return { scale: DEFAULT_SCALE, x: width / 2, y: height / 2 };
   }
-  const xs = floor.vertices.map((vertex) => vertex.x);
-  const ys = floor.vertices.map((vertex) => vertex.y);
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minY = Math.min(...ys);

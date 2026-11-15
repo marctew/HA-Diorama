@@ -125,7 +125,11 @@ def test_text_is_trimmed() -> None:
 
 
 def test_house_defaults() -> None:
-    assert validate_house({}) == {"settings": {"name": "Home"}, "floors": []}
+    assert validate_house({}) == {
+        "settings": {"name": "Home"},
+        "floors": [],
+        "cameras": [],
+    }
 
 
 def test_house_floor_defaults() -> None:
@@ -200,3 +204,51 @@ def test_invalid_export_is_refused(export, where: str) -> None:
     with pytest.raises(vol.Invalid) as raised:
         validate_export(export)
     assert describe(raised.value).startswith(where)
+
+
+CAMERA = {
+    "id": "c1",
+    "name": "From the door",
+    "position": [1, 2, 3],
+    "target": [0, 1, 0],
+}
+
+
+def test_house_cameras() -> None:
+    house = validate_house(
+        {
+            "floors": [{"id": "f1", "name": "Ground"}],
+            "cameras": [CAMERA, {**CAMERA, "id": "c2", "floor": "f1"}],
+        }
+    )
+    assert house["cameras"][0] == {**CAMERA, "floor": None}
+    assert house["cameras"][1]["floor"] == "f1"
+
+
+def test_camera_on_a_floor_that_is_gone_falls_back_to_the_ground() -> None:
+    house = validate_house({"cameras": [{**CAMERA, "floor": "f_gone"}]})
+    assert house["cameras"][0]["floor"] is None
+
+
+@pytest.mark.parametrize(
+    "camera",
+    [
+        {**CAMERA, "name": ""},
+        {**CAMERA, "position": [1, 2]},
+        {**CAMERA, "position": [1, 2, float("nan")]},
+        {**CAMERA, "target": [1, 2, 3, 4]},
+        {**CAMERA, "position": "1,2,3"},
+        {k: v for k, v in CAMERA.items() if k != "target"},
+        {**CAMERA, "fov": 50},
+    ],
+)
+def test_invalid_camera_is_refused(camera) -> None:
+    with pytest.raises(vol.Invalid):
+        validate_house({"cameras": [camera]})
+
+
+def test_cameras_need_unique_ids_and_have_a_limit() -> None:
+    with pytest.raises(vol.Invalid):
+        validate_house({"cameras": [CAMERA, CAMERA]})
+    with pytest.raises(vol.Invalid):
+        validate_house({"cameras": [{**CAMERA, "id": f"c{n}"} for n in range(31)]})

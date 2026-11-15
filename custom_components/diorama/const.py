@@ -20,3 +20,8 @@ CARD_FILE = "diorama-card.js"
 ASSETS_URL = "/diorama_assets"
 ASSETS_DIR = Path(__file__).parent / "assets"
 CATALOGUE_FILE = "catalogue.json"
+
+# Plan images uploaded to trace over, under the configuration folder (not in
+# the integration's own folder, which an update replaces).
+TRACE_FOLDER = "diorama/trace"
+TRACE_MAX_BYTES = 10 * 1024 * 1024

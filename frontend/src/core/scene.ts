@@ -24,11 +24,22 @@ export interface HouseSettings {
   name: string;
 }
 
+/** A saved view: where the camera is and what it looks at, in model axes
+ * (x across, y up, z down the plan), as seen with `floor` on the ground. */
+export interface Camera {
+  id: string;
+  name: string;
+  floor: string | null;
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
 export interface House {
   schema_version: number;
   revision: number;
   settings: HouseSettings;
   floors: FloorMeta[];
+  cameras: Camera[];
 }
 
 export interface Vertex {
@@ -112,7 +123,11 @@ export interface Floor {
 }
 
 /** What a save sends: the server fills in anything optional that is left out. */
-export type HouseInput = { settings?: Partial<HouseSettings>; floors: Partial<FloorMeta>[] };
+export type HouseInput = {
+  settings?: Partial<HouseSettings>;
+  floors: Partial<FloorMeta>[];
+  cameras?: Camera[];
+};
 
 export interface HouseExport {
   diorama_export: number;
