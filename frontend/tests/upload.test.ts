@@ -82,6 +82,14 @@ describe("uploadPath", () => {
     });
   });
 
+  it("says what the model is, when it is something", () => {
+    const base = { name: "Lamp", width: 0.3, depth: 0.3, height: 0.5, against_wall: false };
+    const kindOf = (path: string) => new URL(path, "http://ha.local").searchParams.get("kind");
+    expect(kindOf(uploadPath({ ...base, kind: "light" }))).toBe("light");
+    expect(kindOf(uploadPath({ ...base, kind: null }))).toBeNull();
+    expect(kindOf(uploadPath(base))).toBeNull();
+  });
+
   it("finds the file id in a catalogue id", () => {
     expect(modelFileId("user/m_0123456789abcdef")).toBe("m_0123456789abcdef");
   });

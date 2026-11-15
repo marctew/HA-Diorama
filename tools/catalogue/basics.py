@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import math
 
 from .glb import Mesh
-from .shapes import box, cylinder, legs
+from .shapes import beam, box, cylinder, legs, panel, tube
 
 
 @dataclass(frozen=True)
@@ -46,6 +46,8 @@ class Model:
     # A strip of light: it lights what is under it along its whole length,
     # and fixes itself under a wall unit it is dropped on.
     strip: bool = field(default=False)
+    # The whole of it lights up in the colour of its light: a light panel.
+    lit: bool = field(default=False)
 
 
 def _sofa(mesh: Mesh, width: float, fabric: str) -> None:
@@ -159,6 +161,185 @@ def led_strip(mesh: Mesh) -> None:
     # A metre of it, to be stretched to the length wanted.
     box(mesh, (1.0, 0.008, 0.016), (0, 0.008, 0), "glow")
     box(mesh, (1.0, 0.008, 0.02), (0, 0, 0), "white")
+
+
+def desk_lamp(mesh: Mesh) -> None:
+    # A spring-arm lamp clamped to the back of a desk, its shade over the work.
+    box(mesh, (0.07, 0.05, 0.06), (0, 0, -0.08), "grey_dark")
+    box(mesh, (0.04, 0.03, 0.04), (0, 0.05, -0.08), "grey_dark")
+    foot, elbow, neck = (0, 0.08, -0.08), (0, 0.47, -0.2), (0, 0.66, 0.2)
+    for side in (-0.013, 0.013):
+        tube(
+            mesh,
+            (side, foot[1], foot[2]),
+            (side, elbow[1], elbow[2]),
+            0.006,
+            "grey_dark",
+            5,
+        )
+        tube(
+            mesh,
+            (side, elbow[1], elbow[2]),
+            (side, neck[1], neck[2]),
+            0.006,
+            "grey_dark",
+            5,
+        )
+    tube(
+        mesh, (-0.02, elbow[1], elbow[2]), (0.02, elbow[1], elbow[2]), 0.014, "black", 6
+    )
+    tube(mesh, (-0.018, neck[1], neck[2]), (0.018, neck[1], neck[2]), 0.012, "black", 6)
+    # The shade: a neck, then a cone opening down and forwards.
+    tube(mesh, (0, 0.68, 0.2), (0, 0.63, 0.25), 0.035, "grey_dark", 10)
+    tube(mesh, (0, 0.63, 0.25), (0, 0.53, 0.33), 0.04, "grey_dark", 12, end_radius=0.1)
+    tube(mesh, (0, 0.535, 0.326), (0, 0.527, 0.332), 0.085, "glow", 12)
+
+
+def _light_panel(mesh: Mesh, outline: list[tuple[float, float]]) -> None:
+    panel(mesh, outline, 0, 0.004, "grey")
+    panel(mesh, outline, 0.004, 0.012, "white")
+
+
+def light_panel_triangle(mesh: Mesh) -> None:
+    _light_panel(mesh, [(-0.115, 0), (0.115, 0), (0, 0.199)])
+
+
+def light_panel_triangle_down(mesh: Mesh) -> None:
+    _light_panel(mesh, [(-0.115, 0.199), (0, 0), (0.115, 0.199)])
+
+
+def light_panel_hexagon(mesh: Mesh) -> None:
+    _light_panel(
+        mesh,
+        [
+            (-0.0575, 0),
+            (0.0575, 0),
+            (0.115, 0.0995),
+            (0.0575, 0.199),
+            (-0.0575, 0.199),
+            (-0.115, 0.0995),
+        ],
+    )
+
+
+def _printer(
+    mesh: Mesh, width: float, depth: float, height: float, feeder: bool
+) -> None:
+    # An enclosed printer: a dark case, a glass door and lid, the bed inside.
+    box(mesh, (width, 0.03, depth), (0, 0, 0), "black")
+    box(mesh, (width, height - 0.03, depth), (0, 0.03, 0), "grey_dark")
+    door = (width * 0.8, height * 0.6)
+    box(mesh, (door[0], door[1], 0.012), (0, height * 0.24, depth / 2), "glass")
+    box(
+        mesh,
+        (door[0] * 0.8, 0.012, depth * 0.5),
+        (0, height * 0.34, depth * 0.1),
+        "steel",
+    )
+    box(
+        mesh,
+        (0.02, door[1] * 0.3, 0.02),
+        (door[0] / 2 - 0.03, height * 0.4, depth / 2 + 0.012),
+        "black",
+    )
+    box(
+        mesh,
+        (width * 0.34, height * 0.1, 0.012),
+        (width * 0.24, height * 0.87, depth / 2),
+        "screen",
+    )
+    box(mesh, (width * 0.86, 0.012, depth * 0.86), (0, height, 0), "glass")
+    if not feeder:
+        return
+    # The box of filament that sits on top and feeds it: four reels in a row.
+    top = height + 0.012
+    box(mesh, (width * 0.94, 0.09, depth * 0.72), (0, top, 0), "grey_dark")
+    reels = ("fabric_warm", "fabric_blue", "leaf", "cream")
+    for index, paint in enumerate(reels):
+        x = (index - 1.5) * width * 0.2
+        tube(
+            mesh,
+            (x - width * 0.07, top + 0.13, 0),
+            (x + width * 0.07, top + 0.13, 0),
+            0.085,
+            paint,
+            12,
+        )
+
+
+def printer(mesh: Mesh) -> None:
+    _printer(mesh, 0.39, 0.39, 0.46, feeder=False)
+
+
+def printer_feeder(mesh: Mesh) -> None:
+    _printer(mesh, 0.39, 0.39, 0.46, feeder=True)
+
+
+def printer_large(mesh: Mesh) -> None:
+    _printer(mesh, 0.49, 0.51, 0.63, feeder=False)
+
+
+def printer_large_feeder(mesh: Mesh) -> None:
+    _printer(mesh, 0.49, 0.51, 0.63, feeder=True)
+
+
+def _sim_rig(mesh: Mesh, screens: int) -> None:
+    # The driver sits at the back and faces the front. A frame of aluminium
+    # bar, a bucket seat, a wheel on its deck, pedals, and the screens.
+    for side in (-0.26, 0.26):
+        box(mesh, (0.04, 0.08, 1.4), (side, 0, 0), "black")
+        box(mesh, (0.04, 0.62, 0.08), (side, 0.08, 0.22), "black")
+    for z in (-0.64, 0.0, 0.64):
+        box(mesh, (0.56, 0.04, 0.04), (0, 0.02, z), "black")
+    # Seat.
+    box(mesh, (0.46, 0.1, 0.48), (0, 0.2, -0.34), "grey_dark")
+    for side in (-0.215, 0.215):
+        box(mesh, (0.05, 0.1, 0.44), (side, 0.28, -0.34), "black")
+    beam(mesh, (0, 0.27, -0.56), (0, 0.98, -0.72), 0.44, 0.09, "grey_dark")
+    beam(mesh, (0, 0.98, -0.72), (0, 1.14, -0.75), 0.26, 0.09, "black")
+    beam(mesh, (0, 0.36, -0.53), (0, 0.9, -0.655), 0.2, 0.02, "fabric_warm")
+    # Wheel deck, base and wheel.
+    box(mesh, (0.56, 0.03, 0.2), (0, 0.7, 0.22), "black")
+    box(mesh, (0.2, 0.12, 0.2), (0, 0.73, 0.22), "grey_dark")
+    tube(mesh, (0, 0.8, 0.12), (0, 0.815, 0.03), 0.03, "black", 8)
+    tube(mesh, (0, 0.815, 0.03), (0, 0.82, 0.0), 0.15, "black", 14)
+    tube(mesh, (0, 0.8205, -0.002), (0, 0.8215, -0.006), 0.11, "grey_dark", 14)
+    # Pedals on a sloping plate.
+    beam(mesh, (0, 0.09, 0.42), (0, 0.24, 0.66), 0.5, 0.02, "black")
+    for x in (-0.15, 0.0, 0.15):
+        beam(mesh, (x, 0.14, 0.47), (x, 0.3, 0.56), 0.07, 0.02, "steel")
+    # Screens, on a stand beyond the wheel.
+    for side in (-0.2, 0.2):
+        box(mesh, (0.04, 0.9, 0.04), (side, 0.08, 0.66), "black")
+    box(mesh, (0.5, 0.04, 0.04), (0, 0.9, 0.66), "black")
+    wide, tall = 0.74, 0.42
+
+    def screen(x: float, z: float, turn: float) -> None:
+        box(mesh, (wide, tall, 0.03), (x, 0.72, z), "black", turn=turn)
+        # The picture, on the side the driver looks at.
+        angle = math.radians(turn)
+        box(
+            mesh,
+            (wide - 0.03, tall - 0.03, 0.006),
+            (x + 0.018 * -math.sin(angle), 0.735, z - 0.018 * math.cos(angle)),
+            "screen",
+            turn=turn,
+        )
+
+    screen(0, 0.62, 0)
+    if screens == 3:
+        reach = wide / 2 + (wide / 2) * math.cos(math.radians(50))
+        back = (wide / 2) * math.sin(math.radians(50))
+        screen(-reach, 0.62 - back, -50)
+        screen(reach, 0.62 - back, 50)
+
+
+def sim_rig(mesh: Mesh) -> None:
+    _sim_rig(mesh, 1)
+
+
+def sim_rig_triple(mesh: Mesh) -> None:
+    _sim_rig(mesh, 3)
 
 
 def rug(mesh: Mesh) -> None:
@@ -472,6 +653,52 @@ MODELS: tuple[Model, ...] = (
         strip=True,
     ),
     Model(
+        "desk_lamp",
+        "Desk lamp, spring arm",
+        "Lighting",
+        desk_lamp,
+        ("light", "architect", "task", "clamp", "office"),
+        kind="light",
+        tabletop=True,
+        light_height=0.52,
+    ),
+    Model(
+        "light_panel_triangle",
+        "Light panel, triangle",
+        "Lighting",
+        light_panel_triangle,
+        ("light", "wall", "panel", "led", "rgb"),
+        kind="light",
+        against_wall=True,
+        mount_height=1.4,
+        light_height=0.1,
+        lit=True,
+    ),
+    Model(
+        "light_panel_triangle_down",
+        "Light panel, triangle pointing down",
+        "Lighting",
+        light_panel_triangle_down,
+        ("light", "wall", "panel", "led", "rgb"),
+        kind="light",
+        against_wall=True,
+        mount_height=1.4,
+        light_height=0.1,
+        lit=True,
+    ),
+    Model(
+        "light_panel_hexagon",
+        "Light panel, hexagon",
+        "Lighting",
+        light_panel_hexagon,
+        ("light", "wall", "panel", "led", "rgb"),
+        kind="light",
+        against_wall=True,
+        mount_height=1.4,
+        light_height=0.1,
+        lit=True,
+    ),
+    Model(
         "dining_table",
         "Dining table",
         "Kitchen and dining",
@@ -591,4 +818,58 @@ MODELS: tuple[Model, ...] = (
         against_wall=True,
     ),
     Model("stairs", "Stairs", "Fittings", stairs, ("staircase", "steps"), stairs=True),
+    Model(
+        "printer",
+        "3D printer, enclosed",
+        "Workshop and games",
+        printer,
+        ("printing", "maker", "workshop"),
+        kind="light",
+        tabletop=True,
+        light_height=0.3,
+    ),
+    Model(
+        "printer_feeder",
+        "3D printer with filament box",
+        "Workshop and games",
+        printer_feeder,
+        ("printing", "maker", "workshop", "multicolour"),
+        kind="light",
+        tabletop=True,
+        light_height=0.3,
+    ),
+    Model(
+        "printer_large",
+        "3D printer, large",
+        "Workshop and games",
+        printer_large,
+        ("printing", "maker", "workshop"),
+        kind="light",
+        tabletop=True,
+        light_height=0.4,
+    ),
+    Model(
+        "printer_large_feeder",
+        "3D printer, large, with filament box",
+        "Workshop and games",
+        printer_large_feeder,
+        ("printing", "maker", "workshop", "multicolour"),
+        kind="light",
+        tabletop=True,
+        light_height=0.4,
+    ),
+    Model(
+        "sim_rig",
+        "Sim racing rig",
+        "Workshop and games",
+        sim_rig,
+        ("racing", "simulator", "wheel", "cockpit", "gaming"),
+    ),
+    Model(
+        "sim_rig_triple",
+        "Sim racing rig, three screens",
+        "Workshop and games",
+        sim_rig_triple,
+        ("racing", "simulator", "wheel", "cockpit", "gaming", "triple"),
+    ),
 )

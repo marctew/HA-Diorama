@@ -70,11 +70,12 @@ export function itemFootprint(item: Item, model: CatalogueModel | undefined): Po
   return [corner(-w, -d), corner(w, -d), corner(w, d), corner(-w, d)];
 }
 
-/** The outline to pick an item by: its own, except that a strip of light,
- * which is two centimetres across, is taken to be wide enough to hit. */
+/** The outline to pick an item by: its own, except that a strip of light or
+ * a light panel on a wall, a centimetre or two across, is taken to be wide
+ * enough to hit. */
 export function pickFootprint(item: Item, model: CatalogueModel | undefined): Point[] {
   const depth = itemSize(item, model).depth;
-  if (!model?.strip || depth >= PICK_DEPTH) return itemFootprint(item, model);
+  if (!(model?.strip || model?.lit) || depth >= PICK_DEPTH) return itemFootprint(item, model);
   const stretch: [number, number, number] = [...item.stretch];
   stretch[1] *= PICK_DEPTH / depth;
   return itemFootprint({ ...item, stretch }, model);
@@ -263,8 +264,28 @@ export function duplicateItems(
   for (const copy of copies) {
     if (copy.on !== null && copyOf.has(copy.on)) copy.on = copyOf.get(copy.on)!;
   }
+  // A copy of a lamp is worked by the same light: one switch, many fittings.
+  const fixtures = floor.fixtures.flatMap((fixture) => {
+    const copy = fixture.item !== null ? copies.find((one) => one.id === copyOf.get(fixture.item!)) : undefined;
+    if (!copy) return [];
+    return [
+      {
+        ...fixture,
+        options: { ...fixture.options },
+        id: makeId("x"),
+        item: copy.id,
+        x: copy.x,
+        y: copy.y,
+        room: copy.room,
+      },
+    ];
+  });
   return {
-    floor: { ...floor, items: [...floor.items, ...copies] },
+    floor: {
+      ...floor,
+      items: [...floor.items, ...copies],
+      fixtures: fixtures.length > 0 ? [...floor.fixtures, ...fixtures] : floor.fixtures,
+    },
     ids: copies.map((copy) => copy.id),
   };
 }

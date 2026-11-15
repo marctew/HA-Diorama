@@ -273,7 +273,7 @@ Built (stage 5)
 - `tools/build_catalogue.py` writes `custom_components/diorama/assets/`: one `.glb` per model under `models/<source>/`, and `catalogue.json` listing each model's id, name, category, search tags, source, file, the box it fills in metres (width, depth, height and where the middle of that box is from the model's origin), whether it stands against a wall or hangs from the ceiling, and the kind of fixture it naturally is (lamps, the TV, the radiator). The output is committed, and a test fails if it is not what the tool builds.
 - The first set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
 - Model format: one mesh, `POSITION`, `NORMAL` and `COLOR_0`, no textures; metres, +Y up, standing on y = 0, front facing +Z. The loader in the frontend accepts any `.glb` and reduces it to that (meshes merged, material colours baked into vertex colours, textures ignored), so other kits and uploads go through the same path.
-- With it come 78 pieces of Kenney's Furniture Kit 2.0 (CC0), 113 models and about 2.4 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
+- With it come 78 pieces of Kenney's Furniture Kit 2.0 (CC0), 123 models and about 2.6 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
 - Pictures for the drawer are drawn in the browser from the models themselves, so there are no thumbnail files to keep in step.
 - Only CC0 models are bundled; a test checks every model's source says so. Sources and licences are listed in `CREDITS.md`.
 
@@ -318,8 +318,9 @@ Each stage ends with something that runs and with its tests.
 10. Release: README with screenshots, CREDITS, model upload, translations structure, Marketplace submission.
 11. After the first release (0.2.0): stacking, stretching, double doors and archways, stairwells.
 12. 0.3.0: downlights and one entity on many fittings, strip lights, sliding and glass doors.
+13. 0.4.0: more lights and a workshop (desk lamp, light panels, printers, sim rig), a kind for uploaded models.
 
-All twelve stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
+All thirteen stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
 
 ## 13. Decisions already made
 
@@ -386,6 +387,14 @@ Stage 12, as built (0.3.0)
 - Downlights. `basics/downlight` is a ring in the ceiling; `light_height` in the catalogue says where a model's light comes from when that is neither the top of a lamp nor under a pendant. A light that is not a piece of furniture has "Shown as" in the inspector (the hanging light models, or a marker), and `fillRoom` lays out rows and columns of it across the box round its room, leaving out spots outside an L-shaped room and replacing the ones like it already there. At most 60 at a time.
 - Strip lights. `basics/led_strip` is a metre of strip marked `strip`, stretched like any furniture. Dropped on a wall-mounted piece (`unitOver`) it takes that piece's middle, width and turn and sits just under it, with `on` set so that it goes where the unit goes; `settleStacks` keeps a strip under its unit where it keeps anything else on top. Dragged off, it keeps its height. It is picked by an outline 16 cm across (`pickFootprint`), being 2 cm itself. Bound to a light, it is drawn as a lit bar with a band of light on whatever is under it (`stripLight` finds the worktop), and lights the room less than a lamp does.
 - Doors. `style` is `hinged` or `sliding`, `glazed` makes the leaves glass with their edges drawn as a frame. A sliding door is two panels in two tracks (`slidingPanels`): one fixed at the `hinge` end, one that slides across it. With no sensor it is drawn shut, where a swinging door stands open. A cover on a sliding door moves its panels rather than drawing a blind.
+
+Stage 13, as built (0.4.0)
+
+- `tools/catalogue/shapes.py` gained three shapes: `tube` (a round bar or cone between any two points), `beam` (a flat bar between any two points) and `panel` (an upright flat shape facing the front). With them the basic set has a spring-arm desk lamp, three light panels for a wall, four enclosed 3D printers (two sizes, with and without a filament box on top) and two sim racing rigs. The printers are light-kind, for their chamber lights; the rigs are plain furniture.
+- A model marked `lit` (the light panels) is covered, when its light is on, by a skin of its own shape in the light's colour (`fixture-layer.ts`), so that a colour scene shows on the wall. Like a strip, a panel is picked by a wider outline than its own.
+- `duplicateItems` copies the fixtures bound to what it copies, on the same entity: a second panel, lamp or downlight is one Ctrl+D.
+- Someone adding a model can say that it is a light, something switched, or a media player (`kind` in `models.py` and the dialog). That is what makes a device dropped on it become it.
+- The light that lights throw on a room's floor is divided by the square root of the number of different lights on in that room, and small lamps, panels and strips throw half or less of what a ceiling light does.
 
 Learned while building stage 12:
 

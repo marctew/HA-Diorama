@@ -12,6 +12,7 @@ import {
   sizeProblem,
   uploadPath,
   type Dimension,
+  type ModelKind,
 } from "../core/upload";
 import { lengthForInput, parseLength, type UnitSystem } from "../core/units";
 import type { ReadModel } from "../render/model-import";
@@ -35,6 +36,7 @@ export class DioramaModelDialog extends LitElement {
   @state() private scale = 1;
   @state() private name = "";
   @state() private againstWall = false;
+  @state() private kind: ModelKind | "" = "";
   @state() private error?: string;
 
   protected override willUpdate(changed: PropertyValues<this>): void {
@@ -146,6 +148,22 @@ export class DioramaModelDialog extends LitElement {
             ${problem ??
             "Check the size: a file does not say reliably how big its model is. Change the one you know and the others follow."}
           </p>
+          <label>
+            <span>It is</span>
+            <select
+              @change=${(event: Event) =>
+                (this.kind = (event.target as HTMLSelectElement).value as ModelKind | "")}
+            >
+              <option value="" ?selected=${this.kind === ""}>Furniture, nothing more</option>
+              <option value="light" ?selected=${this.kind === "light"}>A light</option>
+              <option value="switch" ?selected=${this.kind === "switch"}>
+                Something switched on and off
+              </option>
+              <option value="media" ?selected=${this.kind === "media"}>
+                A television or speaker
+              </option>
+            </select>
+          </label>
           <label class="check">
             <input
               type="checkbox"
@@ -158,7 +176,8 @@ export class DioramaModelDialog extends LitElement {
         </div>
       </div>
       <p class="note small">
-        It is kept without its textures, in flat colours like the rest. Its front should face
+        Say it is a light and a light dropped on it becomes it, and glows. It is kept without its
+        textures, in flat colours like the rest. Its front should face
         forwards in the file; you can turn each piece once it is placed.
       </p>
     `;
@@ -183,6 +202,7 @@ export class DioramaModelDialog extends LitElement {
           name: this.name,
           ...scaledSize(model.size, this.scale),
           against_wall: this.againstWall,
+          kind: this.kind || null,
         }),
         { method: "POST", body, headers: { "Content-Type": "model/gltf-binary" } },
       );
@@ -284,7 +304,8 @@ export class DioramaModelDialog extends LitElement {
         font-size: 12px;
         color: var(--diorama-text-muted);
       }
-      input[type="text"] {
+      input[type="text"],
+      select {
         box-sizing: border-box;
         min-width: 0;
         width: 100%;

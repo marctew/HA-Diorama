@@ -14,7 +14,13 @@ export type Dimension = keyof ModelSize;
 export interface ModelDetails extends ModelSize {
   name: string;
   against_wall: boolean;
+  /** What it is, if a device can be it: a light dropped on it becomes it. */
+  kind?: ModelKind | null;
 }
+
+/** The kinds of device a model someone adds can be said to be. */
+export const MODEL_KINDS = ["light", "switch", "media"] as const;
+export type ModelKind = (typeof MODEL_KINDS)[number];
 
 /** The server takes nothing bigger, and nothing outside these sizes. */
 export const MODEL_MAX_BYTES = 10 * 1024 * 1024;
@@ -95,6 +101,7 @@ export function uploadPath(details: ModelDetails): string {
     depth: String(size.depth),
     height: String(size.height),
     against_wall: details.against_wall ? "true" : "false",
+    ...(details.kind ? { kind: details.kind } : {}),
   });
   return `/api/diorama/models?${query.toString()}`;
 }

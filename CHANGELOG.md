@@ -2,6 +2,14 @@
 
 The notes of each release are what Home Assistant shows on Diorama's update. Anything that needs you to do something goes first.
 
+## 0.4.0
+
+- New pieces: a spring-arm desk lamp, light panels for a wall (triangles and a hexagon), enclosed 3D printers in two sizes with or without a filament box, and a sim racing rig with one screen or three.
+- A light panel takes the colour of its light over the whole panel.
+- Copying a lamp, a panel or anything else that is a light copies its light with it, so a wall of panels is one light.
+- A model you add can be said to be a light, something switched, or a television or speaker. A device dropped on it then becomes it.
+- Several different lights on in one room no longer white its floor out.
+
 ## 0.3.0
 
 - Downlights: a light can be shown as a downlight in the ceiling, and "Fill the room" lays out rows and columns of them, all worked by the one light.

@@ -41,6 +41,8 @@ export interface CatalogueModel {
   /** A strip of light: lights what is under it along its length, and fixes
    * itself under a wall unit it is dropped on. */
   strip?: boolean;
+  /** The whole of it lights up in the colour of its light: a light panel. */
+  lit?: boolean;
 }
 
 export interface CatalogueSource {

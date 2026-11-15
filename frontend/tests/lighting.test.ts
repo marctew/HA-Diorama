@@ -12,6 +12,7 @@ import {
   updateFixtures,
 } from "../src/core/fixtures";
 import {
+  duplicateItems,
   itemFootprint,
   itemSize,
   moveItems,
@@ -258,5 +259,47 @@ describe("sliding doors", () => {
     const { floor, id } = withDoor();
     const arch = updateOpening(updateOpening(floor, id, { style: "sliding" }), id, { type: "archway" }).openings[0];
     expect(slidingPanels(arch)).toEqual([]);
+  });
+});
+
+describe("more lights", () => {
+  it("has a desk lamp for a desk, light panels for a wall and printers for a bench", () => {
+    expect(model("basics/desk_lamp")).toMatchObject({ kind: "light", tabletop: true });
+    for (const id of ["light_panel_triangle", "light_panel_triangle_down", "light_panel_hexagon"]) {
+      const one = model(`basics/${id}`);
+      expect(one).toMatchObject({ kind: "light", lit: true, against_wall: true });
+      expect(one.mount_height).toBeGreaterThan(1);
+    }
+    expect(model("basics/printer")).toMatchObject({ kind: "light", tabletop: true });
+    expect(model("basics/printer_large").width).toBeGreaterThan(model("basics/printer").width);
+    expect(model("basics/sim_rig_triple").width).toBeGreaterThan(model("basics/sim_rig").width);
+  });
+
+  it("lets a panel a centimetre thick be hit", () => {
+    const hexagon = model("basics/light_panel_hexagon");
+    const placed = placeItem(room(), hexagon.id, p([3, 0.06]), 0, counter(), hexagon.mount_height);
+    const ys = pickFootprint(placed.floor.items[0], hexagon).map((corner) => corner.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(0.16);
+    const bound = placeFixture(placed.floor, catalogue, "light.wall", "light", p([3, 0.1]), fresh());
+    expect(bound.floor.fixtures[0].item).toBe(placed.id);
+  });
+
+  it("copies a panel with its light, so that a wall of them is one light", () => {
+    const hexagon = model("basics/light_panel_hexagon");
+    const makeId = fresh();
+    const placed = placeItem(room(), hexagon.id, p([3, 0.06]), 0, makeId, hexagon.mount_height);
+    const bound = placeFixture(placed.floor, catalogue, "light.wall", "light", p([3, 0.06]), makeId);
+    const copied = duplicateItems(bound.floor, new Set([placed.id]), 0.23, makeId);
+    expect(copied.floor.fixtures).toHaveLength(2);
+    const [first, second] = copied.floor.fixtures;
+    expect(second).toMatchObject({ entity_id: "light.wall", kind: "light", item: copied.ids[0] });
+    expect(second.id).not.toBe(first.id);
+    expect(second.x).toBeCloseTo(first.x + 0.23);
+    // Moving the copy takes its light along, and leaves the first where it was.
+    const moved = moveItems(copied.floor, new Map([[copied.ids[0], p([5, 0.06])]]));
+    expect(moved.fixtures.map((fixture) => fixture.x)).toEqual([3, 5]);
+    // A piece with no light is copied as before.
+    const plain = placeItem(room(), "basics/chair", p([1, 1]), 0, makeId);
+    expect(duplicateItems(plain.floor, new Set([plain.id]), 0.3, makeId).floor.fixtures).toEqual([]);
   });
 });

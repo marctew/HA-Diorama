@@ -44,7 +44,9 @@ import {
   isOpeningFixture,
   stripLight,
 } from "../core/fixtures";
-import { findModel } from "../core/catalogue";
+import { findModel, modelUrl } from "../core/catalogue";
+import { itemScale } from "../core/items";
+import { loadModel } from "./models";
 import { triangulate } from "../core/geometry";
 import { doorLeaves, slidingPanels } from "../core/openings";
 import { roomPolygon } from "../core/rooms";
@@ -119,6 +121,8 @@ interface Entry {
   sharing: number;
   /** How big its glow is, against that of a lamp. */
   glowSize: number;
+  /** A light panel: a skin over the whole piece, in the light's colour. */
+  skin?: { mesh?: Mesh; material: MeshBasicMaterial };
   /** A strip of light: the bar itself, and the light it throws below. */
   strip?: { bar: Mesh; barMaterial: MeshBasicMaterial; pool: Mesh; poolMaterial: MeshBasicMaterial };
   /** The blind of a window, and the height of the window. */
@@ -269,6 +273,7 @@ export class FixtureLayer {
       // This hangs off a wall, not this group.
       entry.blind?.mesh.removeFromParent();
       entry.blind?.mesh.geometry.dispose();
+      entry.skin?.material.dispose();
       entry.strip?.barMaterial.dispose();
       entry.strip?.poolMaterial.dispose();
     }
@@ -307,6 +312,9 @@ export class FixtureLayer {
     if (small) marker.scale.setScalar(0.5);
     this.group.add(marker);
     const strip = catalogue ? stripLight(fixture, floor, catalogue) : undefined;
+    const boundItem =
+      fixture.item !== null ? floor.items.find((one) => one.id === fixture.item) : undefined;
+    const boundModel = catalogue && boundItem ? findModel(catalogue, boundItem.model) : undefined;
     if (!hasModel && !inWall) {
       // Something to stand on, so that a marker in mid-air reads as being
       // somewhere in the room.
@@ -338,6 +346,30 @@ export class FixtureLayer {
       // A downlight is a point of light, not a lampshade.
       glowSize: small ? 0.4 : 1,
     };
+    if (catalogue && boundItem && boundModel?.lit) {
+      // The whole panel takes the light's colour. Its shape is the model's
+      // own, which may still be on its way.
+      marker.visible = false;
+      const material = new MeshBasicMaterial();
+      const skin: Entry["skin"] = { material };
+      entry.skin = skin;
+      entry.glowSize = 0.6;
+      const [sx, sy, sz] = itemScale(boundItem);
+      void loadModel(modelUrl(catalogue, boundModel)).then(
+        (geometry) => {
+          if (!this.entries.includes(entry)) return;
+          const mesh = new Mesh(geometry, material);
+          mesh.position.set(boundItem.x, elevation + boundItem.z, boundItem.y);
+          mesh.rotation.y = (-boundItem.rotation * Math.PI) / 180;
+          // A hair bigger than the piece, so that it is the skin that shows.
+          mesh.scale.set(sx * 1.02, sy * 1.02, sz * 1.5);
+          skin.mesh = mesh;
+          this.group.add(mesh);
+          this.apply();
+        },
+        () => undefined,
+      );
+    }
     if (strip) {
       // The bar lights up along its length, and throws a band of light on
       // whatever is under it. No round marker: the bar is the thing to tap.
@@ -576,6 +608,15 @@ export class FixtureLayer {
   private apply(): void {
     const colour = new Color();
     const lit: { entry: Entry; visual: FixtureVisual }[] = [];
+    // How many different lights are on in each room: three lamps do not make
+    // a floor three times as bright, or it would be white.
+    const lightsOn = new Map<string, Set<string>>();
+    for (const entry of this.entries) {
+      const visual = this.visuals.get(entry.fixture.id) ?? MISSING;
+      if (!entry.wash || !visual.available || !visual.glows) continue;
+      const room = entry.fixture.room ?? "";
+      lightsOn.set(room, (lightsOn.get(room) ?? new Set()).add(entry.fixture.entity_id));
+    }
     for (const entry of this.entries) {
       const visual = this.visuals.get(entry.fixture.id) ?? MISSING;
       colour.setRGB(visual.colour[0], visual.colour[1], visual.colour[2], SRGBColorSpace);
@@ -584,6 +625,11 @@ export class FixtureLayer {
       entry.markerMaterial.opacity = visual.available ? 1 : 0.45;
       const glowing = visual.available && visual.glows;
       entry.glow.visible = glowing && !entry.strip;
+      if (entry.skin) {
+        entry.skin.material.color.copy(colour);
+        // Off, the panel is its own white.
+        if (entry.skin.mesh) entry.skin.mesh.visible = visual.available && visual.on;
+      }
       if (entry.strip) {
         entry.strip.barMaterial.color.copy(colour);
         entry.strip.pool.visible = glowing;
@@ -603,7 +649,11 @@ export class FixtureLayer {
           (uniforms.uColour.value as Color).copy(colour);
           // Fittings on one switch light the room between them; a strip
           // lights what is under it more than it lights the room.
-          const share = (entry.strip ? 0.3 : 1) / entry.sharing;
+          const others = lightsOn.get(entry.fixture.room ?? "")?.size ?? 1;
+          // A strip, a panel or a small lamp lights the room less than a
+          // ceiling light does.
+          const reach = entry.strip ? 0.3 : entry.skin || entry.glowSize < 1 ? 0.5 : 1;
+          const share = reach / entry.sharing / Math.sqrt(others);
           uniforms.uStrength.value =
             (0.1 + 0.22 * visual.level) * (1 + 0.3 * this.night) * share;
           uniforms.uRadius.value = 2.4 + 1.6 * visual.level;

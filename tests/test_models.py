@@ -255,3 +255,28 @@ async def test_a_spoiled_list_does_not_stop_diorama_loading(
         if model["source"] == "user"
     ]
     assert [model["id"] for model in added] == ["user/m_0123456789abcdef"]
+
+
+async def test_a_model_can_be_said_to_be_a_light(
+    hass: HomeAssistant, setup, hass_client, hass_ws_client
+) -> None:
+    client = await hass_client()
+    lamp = await client.post(
+        "/api/diorama/models", data=glb(), params={**DETAILS, "kind": "light"}
+    )
+    assert (await lamp.json())["model"]["kind"] == "light"
+    # Said to be nothing in particular, or not said: plain furniture.
+    for params in (DETAILS, {**DETAILS, "kind": ""}):
+        plain = await client.post("/api/diorama/models", data=glb(), params=params)
+        assert plain.status == HTTPStatus.OK
+        assert "kind" not in (await plain.json())["model"]
+    odd = await client.post(
+        "/api/diorama/models", data=glb(), params={**DETAILS, "kind": "lock"}
+    )
+    assert odd.status == HTTPStatus.BAD_REQUEST
+    models = (await catalogue(hass_ws_client, hass))["models"]
+    assert [m.get("kind") for m in models if m["source"] == "user"] == [
+        "light",
+        None,
+        None,
+    ]

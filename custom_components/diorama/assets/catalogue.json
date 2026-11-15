@@ -279,6 +279,109 @@
       "strip": true
     },
     {
+      "id": "basics/desk_lamp",
+      "name": "Desk lamp, spring arm",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "architect",
+        "task",
+        "clamp",
+        "office"
+      ],
+      "source": "basics",
+      "file": "models/basics/desk_lamp.glb",
+      "width": 0.2,
+      "depth": 0.622,
+      "height": 0.704,
+      "centre": [
+        0.0,
+        0.097
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true,
+      "light_height": 0.52
+    },
+    {
+      "id": "basics/light_panel_triangle",
+      "name": "Light panel, triangle",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "wall",
+        "panel",
+        "led",
+        "rgb"
+      ],
+      "source": "basics",
+      "file": "models/basics/light_panel_triangle.glb",
+      "width": 0.23,
+      "depth": 0.012,
+      "height": 0.199,
+      "centre": [
+        0.0,
+        0.006
+      ],
+      "against_wall": true,
+      "kind": "light",
+      "mount_height": 1.4,
+      "light_height": 0.1,
+      "lit": true
+    },
+    {
+      "id": "basics/light_panel_triangle_down",
+      "name": "Light panel, triangle pointing down",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "wall",
+        "panel",
+        "led",
+        "rgb"
+      ],
+      "source": "basics",
+      "file": "models/basics/light_panel_triangle_down.glb",
+      "width": 0.23,
+      "depth": 0.012,
+      "height": 0.199,
+      "centre": [
+        0.0,
+        0.006
+      ],
+      "against_wall": true,
+      "kind": "light",
+      "mount_height": 1.4,
+      "light_height": 0.1,
+      "lit": true
+    },
+    {
+      "id": "basics/light_panel_hexagon",
+      "name": "Light panel, hexagon",
+      "category": "Lighting",
+      "tags": [
+        "light",
+        "wall",
+        "panel",
+        "led",
+        "rgb"
+      ],
+      "source": "basics",
+      "file": "models/basics/light_panel_hexagon.glb",
+      "width": 0.23,
+      "depth": 0.012,
+      "height": 0.199,
+      "centre": [
+        0.0,
+        0.006
+      ],
+      "against_wall": true,
+      "kind": "light",
+      "mount_height": 1.4,
+      "light_height": 0.1,
+      "lit": true
+    },
+    {
       "id": "basics/dining_table",
       "name": "Dining table",
       "category": "Kitchen and dining",
@@ -692,6 +795,145 @@
       ],
       "against_wall": false,
       "stairs": true
+    },
+    {
+      "id": "basics/printer",
+      "name": "3D printer, enclosed",
+      "category": "Workshop and games",
+      "tags": [
+        "printing",
+        "maker",
+        "workshop"
+      ],
+      "source": "basics",
+      "file": "models/basics/printer.glb",
+      "width": 0.39,
+      "depth": 0.412,
+      "height": 0.472,
+      "centre": [
+        0.0,
+        0.011
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true,
+      "light_height": 0.3
+    },
+    {
+      "id": "basics/printer_feeder",
+      "name": "3D printer with filament box",
+      "category": "Workshop and games",
+      "tags": [
+        "printing",
+        "maker",
+        "workshop",
+        "multicolour"
+      ],
+      "source": "basics",
+      "file": "models/basics/printer_feeder.glb",
+      "width": 0.39,
+      "depth": 0.412,
+      "height": 0.687,
+      "centre": [
+        0.0,
+        0.011
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true,
+      "light_height": 0.3
+    },
+    {
+      "id": "basics/printer_large",
+      "name": "3D printer, large",
+      "category": "Workshop and games",
+      "tags": [
+        "printing",
+        "maker",
+        "workshop"
+      ],
+      "source": "basics",
+      "file": "models/basics/printer_large.glb",
+      "width": 0.49,
+      "depth": 0.532,
+      "height": 0.642,
+      "centre": [
+        0.0,
+        0.011
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true,
+      "light_height": 0.4
+    },
+    {
+      "id": "basics/printer_large_feeder",
+      "name": "3D printer, large, with filament box",
+      "category": "Workshop and games",
+      "tags": [
+        "printing",
+        "maker",
+        "workshop",
+        "multicolour"
+      ],
+      "source": "basics",
+      "file": "models/basics/printer_large_feeder.glb",
+      "width": 0.49,
+      "depth": 0.532,
+      "height": 0.857,
+      "centre": [
+        0.0,
+        0.011
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "tabletop": true,
+      "light_height": 0.4
+    },
+    {
+      "id": "basics/sim_rig",
+      "name": "Sim racing rig",
+      "category": "Workshop and games",
+      "tags": [
+        "racing",
+        "simulator",
+        "wheel",
+        "cockpit",
+        "gaming"
+      ],
+      "source": "basics",
+      "file": "models/basics/sim_rig.glb",
+      "width": 0.74,
+      "depth": 1.494,
+      "height": 1.148,
+      "centre": [
+        0.0,
+        -0.047
+      ],
+      "against_wall": false
+    },
+    {
+      "id": "basics/sim_rig_triple",
+      "name": "Sim racing rig, three screens",
+      "category": "Workshop and games",
+      "tags": [
+        "racing",
+        "simulator",
+        "wheel",
+        "cockpit",
+        "gaming",
+        "triple"
+      ],
+      "source": "basics",
+      "file": "models/basics/sim_rig_triple.glb",
+      "width": 1.714,
+      "depth": 1.494,
+      "height": 1.148,
+      "centre": [
+        0.0,
+        -0.047
+      ],
+      "against_wall": false
     },
     {
       "id": "kenney/sofa_lounge",

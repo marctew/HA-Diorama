@@ -29,6 +29,7 @@ GLB_HEADER = struct.Struct("<4sII")
 GLB_JSON_CHUNK = b"JSON"
 
 _SIZE = vol.All(vol.Coerce(float), vol.Range(min=0.01, max=30))
+MODEL_KINDS = ("light", "switch", "media")
 
 MODEL_DETAILS = vol.Schema(
     {
@@ -37,6 +38,11 @@ MODEL_DETAILS = vol.Schema(
         vol.Required("depth"): _SIZE,
         vol.Required("height"): _SIZE,
         vol.Optional("against_wall", default=False): vol.Boolean(),
+        # What it is, if it is something a device can be: a light dropped on
+        # it then becomes it. Nothing, or empty, for plain furniture.
+        vol.Optional("kind", default=None): vol.Any(
+            None, vol.All("", lambda _: None), vol.In(MODEL_KINDS)
+        ),
     }
 )
 
@@ -88,6 +94,7 @@ def catalogue_entry(model: dict[str, Any]) -> dict[str, Any]:
         "height": model["height"],
         "centre": [0.0, 0.0],
         "against_wall": model["against_wall"],
+        **({"kind": model["kind"]} if model.get("kind") else {}),
     }
 
 
