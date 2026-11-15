@@ -46,7 +46,7 @@ An update to Diorama needs a restart of Home Assistant; the first install does n
 - Select a door to give it two leaves, hang it from the other side or open it the other way. Drag either end of a door or window to change its width.
 - Select a piece of furniture and drag its handles to stretch it, or type its size on the right. Small things (lamps, a microwave, a laptop) stand on whatever table or unit you drop them on, and go with it when it moves. **Off the floor** puts anything at a height: a wall unit, a mirror, a picture.
 - Stairs open the floor above them, and show coming up through it. For a stairwell of another shape, a gallery or a double-height room, select the room upstairs and tick **Open to the floor below**.
-- With nothing selected, the panel on the right takes a floor plan image to trace over.
+- With nothing selected, the panel on the right takes a floor plan image to trace over. **Set the scale** sizes it from two points you know the distance between, and **Move it** lets you drag it into place.
 - **Floors** adds and arranges floors. **Views** on the 3D side saves camera angles for cards to use.
 
 ![Placing devices: the list is by room, and each kind has its own badge on the plan](docs/images/devices.png)

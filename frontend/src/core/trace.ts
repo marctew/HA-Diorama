@@ -50,6 +50,12 @@ export function calibrate(trace: Trace, first: Point, second: Point, realDistanc
   };
 }
 
+/** Slide the image across the plan. */
+export function moveTrace(trace: Trace, dx: number, dy: number): Trace {
+  if ((dx === 0 && dy === 0) || !Number.isFinite(dx) || !Number.isFinite(dy)) return trace;
+  return { ...trace, x: round(trace.x + dx), y: round(trace.y + dy) };
+}
+
 function round(value: number): number {
   return Number(value.toFixed(4));
 }

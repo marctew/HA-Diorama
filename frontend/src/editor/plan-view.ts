@@ -44,6 +44,7 @@ import { addWall, commit, moveVertices } from "../core/plan";
 import { roomPolygon } from "../core/rooms";
 import type { Fixture, FixtureKind, Floor, Item, Opening } from "../core/scene";
 import { snap, type SnapResult } from "../core/snap";
+import { moveTrace } from "../core/trace";
 import { formatArea, formatLength, parseLength, type UnitSystem } from "../core/units";
 import { themeStyles } from "../shared/theme";
 import { icon } from "./icons";
@@ -82,6 +83,8 @@ type Drag =
   | { kind: "pan"; pointer: number; last: Point }
   | { kind: "marquee"; pointer: number; start: Point; end: Point }
   | { kind: "opening"; pointer: number; start: Point; id: string; moved: boolean }
+  /** The plan image being slid about; `start` is where on the plan it began. */
+  | { kind: "trace"; pointer: number; start: Point }
   | (HandleDrag & { pointer: number })
   | {
       kind: "move";
@@ -126,6 +129,8 @@ export class DioramaPlanView extends LitElement {
   @property({ attribute: false }) traceImage?: { url: string; width: number; height: number };
   /** Waiting for two clicks on the image, to set its scale. */
   @property({ type: Boolean }) calibrating = false;
+  /** Dragging slides the plan image instead of anything drawn over it. */
+  @property({ type: Boolean, attribute: "moving-trace" }) movingTrace = false;
   @property() units: UnitSystem = "metric";
   /** Look but do not touch: panning and zooming only. */
   @property({ type: Boolean }) readonly = false;
@@ -328,6 +333,7 @@ export class DioramaPlanView extends LitElement {
   private cursorClass(): string {
     if (this.panning) return "panning";
     if (this.spaceDown || this.readonly) return "pannable";
+    if (this.movingTrace) return "moving";
     if (this.tool === "wall" || this.tool === "opening" || this.calibrating) return "drawing";
     if (this.tool === "device" && this.placingEntity) return "placing";
     return this.tool === "furniture" && this.placing ? "placing" : "";
@@ -810,6 +816,12 @@ export class DioramaPlanView extends LitElement {
     }
     if (event.button !== 0 || !this.floor) return;
 
+    if (this.movingTrace) {
+      if (!this.floor.trace) return;
+      svgElement.setPointerCapture(event.pointerId);
+      this.drag = { kind: "trace", pointer: event.pointerId, start: toWorld(this.view, screen) };
+      return;
+    }
     if (this.calibrating) {
       const world = toWorld(this.view, screen);
       if (!this.calibrationStart) {
@@ -988,6 +1000,17 @@ export class DioramaPlanView extends LitElement {
       if (wall) this.transient = moveOpening(floor, drag.id, wall, world);
       return;
     }
+    if (drag?.kind === "trace" && drag.pointer === event.pointerId) {
+      const floor = this.floor!;
+      const world = toWorld(this.view, screen);
+      if (floor.trace) {
+        this.transient = {
+          ...floor,
+          trace: moveTrace(floor.trace, world.x - drag.start.x, world.y - drag.start.y),
+        };
+      }
+      return;
+    }
     if (drag?.kind === "stretch" && drag.pointer === event.pointerId) {
       const floor = this.floor!;
       const world = toWorld(this.view, screen);
@@ -1106,7 +1129,7 @@ export class DioramaPlanView extends LitElement {
       if (drag.moved && slid) this.edit(slid);
       return;
     }
-    if (drag.kind === "stretch" || drag.kind === "opening-end") {
+    if (drag.kind === "stretch" || drag.kind === "opening-end" || drag.kind === "trace") {
       const changed = this.transient;
       this.transient = undefined;
       if (changed && changed !== this.floor) this.edit(changed);
@@ -1395,6 +1418,9 @@ export class DioramaPlanView extends LitElement {
       }
       svg.drawing {
         cursor: crosshair;
+      }
+      svg.moving {
+        cursor: move;
       }
       svg.placing {
         cursor: copy;

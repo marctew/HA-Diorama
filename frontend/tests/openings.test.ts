@@ -13,7 +13,7 @@ import {
 } from "../src/core/openings";
 import { addWall, commit, moveVertices } from "../src/core/plan";
 import type { Floor } from "../src/core/scene";
-import { calibrate, newTrace, traceBox } from "../src/core/trace";
+import { calibrate, moveTrace, newTrace, traceBox } from "../src/core/trace";
 import { assertConsistent, counter, draw, emptyFloor, p, rectangle, vertexAt, wallBetween, DOOR_DEFAULTS } from "./helpers";
 
 const room = (): Floor => rectangle(emptyFloor(), counter(), 0, 0, 6, 4);
@@ -306,5 +306,15 @@ describe("trace", () => {
     expect(calibrate(trace, { x: 0, y: 0 }, { x: 1, y: 0 }, 0)).toBe(trace);
     expect(calibrate(trace, { x: 0, y: 0 }, { x: 1, y: 0 }, Number.NaN)).toBe(trace);
     expect(calibrate(trace, { x: 0, y: 0 }, { x: 0.001, y: 0 }, 1e9)).toBe(trace);
+  });
+
+  it("slides across the plan without changing size", () => {
+    const trace = newTrace("t_0123456789abcdef", 1000, 500, { x: 0, y: 0 });
+    const moved = moveTrace(trace, 1.23456, -2);
+    expect(moved).toMatchObject({ x: trace.x + 1.2346, y: trace.y - 2, scale: trace.scale, opacity: trace.opacity });
+    expect(traceBox(moved, 1000, 500).width).toBe(traceBox(trace, 1000, 500).width);
+    // Nowhere to go, or nonsense: the very same trace.
+    expect(moveTrace(trace, 0, 0)).toBe(trace);
+    expect(moveTrace(trace, Number.NaN, 1)).toBe(trace);
   });
 });

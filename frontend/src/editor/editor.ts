@@ -83,6 +83,8 @@ export class DioramaEditor extends LitElement {
   @state() private traceImage?: { id: string; url: string; width: number; height: number };
   /** Picking two points on the image, to set its scale. */
   @state() private calibrating = false;
+  /** Dragging on the plan slides the plan image. */
+  @state() private movingTrace = false;
   /** The two points picked, waiting for the real distance between them. */
   @state() private measured?: { first: Point; second: Point };
   /** The list of saved views is open. */
@@ -437,6 +439,8 @@ export class DioramaEditor extends LitElement {
 
   private setTool(tool: Tool): void {
     this.tool = tool;
+    // Any tool but the pointer ends sliding the plan image about.
+    if (tool !== "select") this.movingTrace = false;
     if (tool !== "select") this.selection = NO_SELECTION;
     if (tool !== "furniture") this.placing = undefined;
     if (tool !== "device") this.placingEntity = undefined;
@@ -514,6 +518,10 @@ export class DioramaEditor extends LitElement {
       return;
     }
     if (key === "Escape") {
+      if (this.movingTrace) {
+        this.movingTrace = false;
+        return;
+      }
       if (this.calibrating || this.measured) {
         this.calibrating = false;
         this.measured = undefined;
@@ -590,6 +598,7 @@ export class DioramaEditor extends LitElement {
             .openingType=${this.openingType}
             .traceImage=${this.traceImage}
             ?calibrating=${this.calibrating}
+            ?moving-trace=${this.movingTrace && Boolean(this.floor?.trace)}
             .holes=${this.well.holes}
             .units=${this.units}
             @plan-calibrate=${(event: CustomEvent<{ first: Point; second: Point }>) => {
@@ -626,8 +635,16 @@ export class DioramaEditor extends LitElement {
             @inspector-trace-scale=${() => {
               this.setTool("select");
               this.measured = undefined;
+              this.movingTrace = false;
               this.calibrating = true;
             }}
+            @inspector-trace-move=${() => {
+              this.setTool("select");
+              this.calibrating = false;
+              this.measured = undefined;
+              this.movingTrace = !this.movingTrace;
+            }}
+            .movingTrace=${this.movingTrace}
             @inspector-rotate=${() => this.rotateSelection(ROTATE_STEP)}
             @inspector-duplicate=${this.duplicateSelection}
           ></diorama-inspector>`}
@@ -860,6 +877,11 @@ export class DioramaEditor extends LitElement {
           </button>
         </div>
       `;
+    }
+    if (this.movingTrace && this.floor?.trace) {
+      return html`<p class="hint">
+        Drag anywhere on the plan to slide the image under your walls. Esc when it is in place.
+      </p>`;
     }
     if (this.calibrating) {
       return html`<p class="hint">

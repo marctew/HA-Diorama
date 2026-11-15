@@ -377,6 +377,7 @@ Stage 11, as built (0.2.0)
 - Doors (`core/openings.ts`, `render/fixture-layer.ts`). `doorLeaves` says where each leaf hangs. Every door is drawn with its leaves, standing open unless it has a sensor that says shut; a door with a cover (a garage door) has a blind instead. The plan draws each leaf and its swing to match. A selected door or window has a handle at each end (`resizeOpening`).
 - Stairwells (`core/stairwells.ts`). The catalogue marks staircases (`stairs`). The floor above one is drawn with its outline left out: `buildFloorMesh` takes `holes` and cuts each floor triangle against them (`subtractConvex` in `geometry.ts`, exact and with no dependence on the shape of the rooms). In the house view each floor is cut for the stairs of the floor under it. A floor or room shown alone also needs that floor loaded (`floorsNeeded`), is cut the same way, and draws its staircases coming up from below (`ViewFloor.below`). The editor fetches the floor below for the same purpose and outlines the hole on the plan. A room marked `open` has no floor at all, for stairwells of other shapes.
 - The hole is the whole outline of the staircase, not just the part that needs headroom.
+- The plan image can be slid about: "Move it" in the floor panel turns dragging on the plan into moving the image (`moveTrace`), whatever is drawn over it, until Esc, the button again or another tool. One undo step for each drag.
 
 Learned while building stage 11:
 

@@ -26,6 +26,7 @@ const PATHS = {
   layers: svg`<path d="m12 3 9 5-9 5-9-5z" /><path d="m3 13 9 5 9-5M3 17.5l9 5 9-5" opacity="0.55" />`,
   up: svg`<path d="m6 14 6-6 6 6" />`,
   down: svg`<path d="m6 10 6 6 6-6" />`,
+  move: svg`<path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />`,
   cube: svg`<path d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" /><path d="m4 7.5 8 4.5 8-4.5M12 12v9" />`,
 };
 

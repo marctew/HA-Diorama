@@ -54,6 +54,8 @@ export class DioramaInspector extends LitElement {
   @property({ attribute: false }) selection?: Selection;
   @property({ attribute: false }) hass?: HomeAssistant;
   @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
+  /** The plan image is being slid about. */
+  @property({ type: Boolean }) movingTrace = false;
   @property() units: UnitSystem = "metric";
 
   protected override render(): TemplateResult | typeof nothing {
@@ -602,13 +604,20 @@ export class DioramaInspector extends LitElement {
               <button class="plain" @click=${this.fire("inspector-trace-scale")}>
                 ${icon("fit")} Set the scale
               </button>
+              <button
+                class="plain ${this.movingTrace ? "on" : ""}"
+                aria-pressed=${this.movingTrace}
+                @click=${this.fire("inspector-trace-move")}
+              >
+                ${icon("move")} ${this.movingTrace ? "Done moving" : "Move it"}
+              </button>
               <button class="plain" @click=${() => this.edit({ ...floor, trace: null })}>
                 ${icon("trash")} Remove
               </button>
             </div>
             <p class="help spaced">
               To set the scale, click two points on the image and say how far apart they really
-              are.
+              are. To line the image up with walls you have drawn, choose Move it and drag.
             </p>
           `
         : html`
@@ -814,6 +823,10 @@ export class DioramaInspector extends LitElement {
         font: inherit;
         font-size: 11px;
         color: var(--diorama-text);
+      }
+      .plain.on {
+        border-color: var(--diorama-accent);
+        background: color-mix(in srgb, var(--diorama-accent) 16%, transparent);
       }
       .trio {
         display: grid;
