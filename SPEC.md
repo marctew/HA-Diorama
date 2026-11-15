@@ -286,6 +286,6 @@ Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest
 Still open:
 
 - Nothing has been run on Home Assistant 2026.11 itself, or installed through the Marketplace. Do both before the first release.
-- hassfest and the HACS action have only been set up in CI, not seen passing. The HACS action also checks repository settings: a description, topics and issues enabled.
+- hassfest passes in CI. The HACS action fails until the repository has a description and topics, and a licence on the default branch (the LICENSE file is there once this work is merged); its manifest, brand, issues and `hacs.json` checks pass.
 - The card config editor API (`getConfigElement`, `getStubConfig`, or a form schema): read https://contributors.home-assistant.io/frontend/custom-ui/card-editor/ at the start of stage 7.
 - That no entry in the catalogue (`hacs/default`) already uses the name or domain `diorama`.
