@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Diorama",
+        "description": "Diorama adds a panel to the sidebar where you draw your house, and a dashboard card to show it. There is nothing to configure here."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Diorama is already set up. It only needs to be added once."
+    }
+  }
+}

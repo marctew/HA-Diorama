@@ -4,7 +4,7 @@ A Home Assistant custom integration that lets you lay out your house in 3D (floo
 
 Public release, distributed through the Home Assistant Marketplace (the built-in successor to HACS, from 2026.11).
 
-Status: design agreed, nothing built. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
+Status: design agreed; stage 1 (the skeleton) is built. Section 12 is the build order. Section 13 records decisions already made. Section 14 records what was checked against the Home Assistant contributor docs (https://contributors.home-assistant.io, which replaced developers.home-assistant.io) and what is still open.
 
 ## 1. Goals and non-goals
 
@@ -275,9 +275,17 @@ Checked on 2026-11-15 against https://contributors.home-assistant.io (frontend a
 - Custom cards: `setConfig`, `hass`, `getCardSize`, `getGridOptions`, `preview`; the `states` context subscription; `window.loadCardHelpers()` for dialogs such as the confirmation prompt.
 - `hass.states`, `hass.entities`, `hass.devices`, `hass.areas`, `hass.floors`, `hass.callService`, `hass.callWS` and `hass.connection` are all in the hass object reference.
 
+Learned while building stage 1 (run against Home Assistant 2026.10.4, the newest version the test tooling installs):
+
+- `frontend.add_extra_js_url()`, `hass.http.async_register_static_paths()` with `StaticPathConfig`, and `frontend.async_remove_panel()` exist with the signatures used in section 4.
+- Home Assistant replaces the browser's custom element registry when its app starts, and only looks for cards in the new one. A module loaded with `add_extra_js_url` can run before that, and a card it defines then shows as "Custom element doesn't exist". The card entry therefore waits for `customElements.whenDefined("home-assistant")` before it defines `diorama-card`. Keep this for anything else defined from that entry.
+- The Vite build needs `base: "./"`, or the preload of lazy chunks asks for them at the site root and gets a 404.
+- None of the integration categories fits a dashboard tool, so the manifest has no `categories`. The HACS action reports that as a warning, not a failure.
+- In the sections view the card returns `rows: "auto"` so its height follows `aspect_ratio`.
+
 Still open:
 
-- `frontend.add_extra_js_url()` and `hass.http.async_register_static_paths()` are not described in the contributor docs. Their signatures were confirmed in the Home Assistant 2026.2.3 source; confirm them on 2026.11 at the start of stage 1.
+- Nothing has been run on Home Assistant 2026.11 itself, or installed through the Marketplace. Do both before the first release.
+- hassfest and the HACS action have only been set up in CI, not seen passing. The HACS action also checks repository settings: a description, topics and issues enabled.
 - The card config editor API (`getConfigElement`, `getStubConfig`, or a form schema): read https://contributors.home-assistant.io/frontend/custom-ui/card-editor/ at the start of stage 7.
-- Which integration `categories` fit: read the categories list at stage 1.
 - That no entry in the catalogue (`hacs/default`) already uses the name or domain `diorama`.
