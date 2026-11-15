@@ -32,6 +32,7 @@ FIXTURE_KINDS = (
 # An archway is a door-sized hole with no door in it.
 OPENING_TYPES = ("door", "window", "archway")
 HINGES = ("start", "end")
+DOOR_STYLES = ("hinged", "sliding")
 
 DEFAULT_WALL_HEIGHT = 2.4
 DEFAULT_WALL_THICKNESS = 0.1
@@ -155,6 +156,10 @@ OPENING = vol.Schema(
         vol.Optional("leaves", default=1): vol.In((1, 2)),
         vol.Optional("hinge", default="start"): vol.In(HINGES),
         vol.Optional("swing", default=1): vol.In((1, -1)),
+        # Doors: swinging on hinges or sliding along the wall, and whether
+        # they are glass.
+        vol.Optional("style", default="hinged"): vol.In(DOOR_STYLES),
+        vol.Optional("glazed", default=False): bool,
     }
 )
 ROOM = vol.Schema(

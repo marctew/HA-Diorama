@@ -40,6 +40,12 @@ class Model:
     stairs: bool = field(default=False)
     # Goes on a wall: how far off the floor it is put to begin with.
     mount_height: float | None = field(default=None)
+    # For a light: how far up the model its light comes from, where that is
+    # not near the top of a lamp or under a pendant.
+    light_height: float | None = field(default=None)
+    # A strip of light: it lights what is under it along its whole length,
+    # and fixes itself under a wall unit it is dropped on.
+    strip: bool = field(default=False)
 
 
 def _sofa(mesh: Mesh, width: float, fabric: str) -> None:
@@ -141,6 +147,18 @@ def ceiling_light(mesh: Mesh) -> None:
     cylinder(mesh, 0.06, 0.02, (0, 2.38, 0), "white", sides=8)
     cylinder(mesh, 0.008, 0.38, (0, 2.0, 0), "black", sides=4)
     cylinder(mesh, 0.2, 0.2, (0, 1.82, 0), "glow", top_radius=0.1)
+
+
+def downlight(mesh: Mesh) -> None:
+    # Set into the ceiling at 2.4 m: a trim ring and the lamp inside it.
+    cylinder(mesh, 0.05, 0.012, (0, 2.388, 0), "white", sides=12)
+    cylinder(mesh, 0.034, 0.006, (0, 2.383, 0), "glow", sides=12)
+
+
+def led_strip(mesh: Mesh) -> None:
+    # A metre of it, to be stretched to the length wanted.
+    box(mesh, (1.0, 0.008, 0.016), (0, 0.008, 0), "glow")
+    box(mesh, (1.0, 0.008, 0.02), (0, 0, 0), "white")
 
 
 def rug(mesh: Mesh) -> None:
@@ -432,6 +450,26 @@ MODELS: tuple[Model, ...] = (
         ("pendant", "light"),
         kind="light",
         hanging=True,
+    ),
+    Model(
+        "downlight",
+        "Downlight",
+        "Lighting",
+        downlight,
+        ("spotlight", "recessed", "ceiling", "light"),
+        kind="light",
+        hanging=True,
+        light_height=2.38,
+    ),
+    Model(
+        "led_strip",
+        "LED strip",
+        "Lighting",
+        led_strip,
+        ("strip", "under cabinet", "tape", "light"),
+        kind="light",
+        light_height=0.0,
+        strip=True,
     ),
     Model(
         "dining_table",

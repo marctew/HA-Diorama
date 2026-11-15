@@ -273,7 +273,7 @@ Built (stage 5)
 - `tools/build_catalogue.py` writes `custom_components/diorama/assets/`: one `.glb` per model under `models/<source>/`, and `catalogue.json` listing each model's id, name, category, search tags, source, file, the box it fills in metres (width, depth, height and where the middle of that box is from the model's origin), whether it stands against a wall or hangs from the ceiling, and the kind of fixture it naturally is (lamps, the TV, the radiator). The output is committed, and a test fails if it is not what the tool builds.
 - The first set is "Diorama basics": 33 original low-poly pieces at typical UK sizes, defined in `tools/catalogue/basics.py` from boxes and cylinders with one small palette, and released as CC0. About 520 kB in all.
 - Model format: one mesh, `POSITION`, `NORMAL` and `COLOR_0`, no textures; metres, +Y up, standing on y = 0, front facing +Z. The loader in the frontend accepts any `.glb` and reduces it to that (meshes merged, material colours baked into vertex colours, textures ignored), so other kits and uploads go through the same path.
-- With it come 78 pieces of Kenney's Furniture Kit 2.0 (CC0), 111 models and about 2.3 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
+- With it come 78 pieces of Kenney's Furniture Kit 2.0 (CC0), 113 models and about 2.4 MB in all. The kit's own `.glb` files for those pieces are kept in `tools/catalogue/kenney/` with its licence, and `tools/catalogue/kenney.py` lists each piece with the size it should really be: the kit is about half real size, starts at a corner and has colours of its own. `gltf_read.py` reads the triangles with their node transforms applied; each piece is then scaled (per axis where a real size is given, as for kitchen units, which must be 600 mm wide), put on the floor with its middle on the origin, and painted from the one palette by the name of the kit's material. What is written is in the same format as the basic set. Each piece was looked at in the drawer and in a room with 2.4 m walls.
 - Pictures for the drawer are drawn in the browser from the models themselves, so there are no thumbnail files to keep in step.
 - Only CC0 models are bundled; a test checks every model's source says so. Sources and licences are listed in `CREDITS.md`.
 
@@ -317,8 +317,9 @@ Each stage ends with something that runs and with its tests.
 9. More bindings in the order of the table in section 8; day and night.
 10. Release: README with screenshots, CREDITS, model upload, translations structure, Marketplace submission.
 11. After the first release (0.2.0): stacking, stretching, double doors and archways, stairwells.
+12. 0.3.0: downlights and one entity on many fittings, strip lights, sliding and glass doors.
 
-All eleven stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
+All twelve stages are built. What is left before the first release is in section 14 under "Still open": things only the owner of the repository can do.
 
 ## 13. Decisions already made
 
@@ -378,6 +379,18 @@ Stage 11, as built (0.2.0)
 - Stairwells (`core/stairwells.ts`). The catalogue marks staircases (`stairs`). The floor above one is drawn with its outline left out: `buildFloorMesh` takes `holes` and cuts each floor triangle against them (`subtractConvex` in `geometry.ts`, exact and with no dependence on the shape of the rooms). In the house view each floor is cut for the stairs of the floor under it. A floor or room shown alone also needs that floor loaded (`floorsNeeded`), is cut the same way, and draws its staircases coming up from below (`ViewFloor.below`). The editor fetches the floor below for the same purpose and outlines the hole on the plan. A room marked `open` has no floor at all, for stairwells of other shapes.
 - The hole is the whole outline of the staircase, not just the part that needs headroom.
 - The plan image can be slid about: "Move it" in the floor panel turns dragging on the plan into moving the image (`moveTrace`), whatever is drawn over it, until Esc, the button again or another tool. One undo step for each drag.
+
+Stage 12, as built (0.3.0)
+
+- One entity, many fittings. Nothing ever stopped two fixtures naming one entity except the device list, which no longer greys out what is placed (it shows how many times). A light or switch stays picked after it is placed, so that each fitting can be clicked in turn. Every fixture of an entity shows its state, and a tap on any of them works it. `fittingsSharing` counts the fixtures of an entity in a room, and the light each throws on the floor is divided by that, so that the room is lit once.
+- Downlights. `basics/downlight` is a ring in the ceiling; `light_height` in the catalogue says where a model's light comes from when that is neither the top of a lamp nor under a pendant. A light that is not a piece of furniture has "Shown as" in the inspector (the hanging light models, or a marker), and `fillRoom` lays out rows and columns of it across the box round its room, leaving out spots outside an L-shaped room and replacing the ones like it already there. At most 60 at a time.
+- Strip lights. `basics/led_strip` is a metre of strip marked `strip`, stretched like any furniture. Dropped on a wall-mounted piece (`unitOver`) it takes that piece's middle, width and turn and sits just under it, with `on` set so that it goes where the unit goes; `settleStacks` keeps a strip under its unit where it keeps anything else on top. Dragged off, it keeps its height. It is picked by an outline 16 cm across (`pickFootprint`), being 2 cm itself. Bound to a light, it is drawn as a lit bar with a band of light on whatever is under it (`stripLight` finds the worktop), and lights the room less than a lamp does.
+- Doors. `style` is `hinged` or `sliding`, `glazed` makes the leaves glass with their edges drawn as a frame. A sliding door is two panels in two tracks (`slidingPanels`): one fixed at the `hinge` end, one that slides across it. With no sensor it is drawn shut, where a swinging door stands open. A cover on a sliding door moves its panels rather than drawing a blind.
+
+Learned while building stage 12:
+
+- A strip two centimetres across could not be hit with a device, or picked up, until it was given a wider outline to be picked by. Found in the browser.
+- Eight glows the size of a lampshade and eight full washes whited the room out; a downlight's glow is 40% of a lamp's and the wash is shared.
 
 Learned while building stage 11:
 

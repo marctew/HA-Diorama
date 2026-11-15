@@ -2,7 +2,7 @@
 
 Home Assistant custom integration: draw your house in 3D, place devices in it, show and control it from a panel and a dashboard card. Public, distributed through the Home Assistant Marketplace.
 
-Read SPEC.md before changing behaviour. Section 12 is the build order (all eleven stages are done), section 13 the decisions already made, section 14 what was checked against the docs and what was learned the hard way.
+Read SPEC.md before changing behaviour. Section 12 is the build order (all twelve stages are done), section 13 the decisions already made, section 14 what was checked against the docs and what was learned the hard way.
 
 ## Layout
 

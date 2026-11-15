@@ -328,3 +328,28 @@ def test_bad_values_for_the_new_fields_are_refused(where: str, change: dict) -> 
     data[where][0].update(change)
     with pytest.raises(vol.Invalid):
         validate_floor(data)
+
+
+def test_door_style_and_glazing() -> None:
+    floor = validate_floor(sample_floor())
+    assert floor["openings"][0]["style"] == "hinged"
+    assert floor["openings"][0]["glazed"] is False
+    data = sample_floor()
+    data["openings"][0].update(style="sliding", glazed=True)
+    floor = validate_floor(data)
+    assert floor["openings"][0]["style"] == "sliding"
+    assert floor["openings"][0]["glazed"] is True
+    for bad in ({"style": "revolving"}, {"glazed": "yes"}):
+        data = sample_floor()
+        data["openings"][0].update(bad)
+        with pytest.raises(vol.Invalid):
+            validate_floor(data)
+
+
+def test_one_entity_can_be_placed_many_times() -> None:
+    data = sample_floor()
+    first = data["fixtures"][0]
+    data["fixtures"] = [{**first, "id": f"x{n}", "x": 0.5 + n * 0.5} for n in range(6)]
+    floor = validate_floor(data)
+    assert len({fixture["entity_id"] for fixture in floor["fixtures"]}) == 1
+    assert len(floor["fixtures"]) == 6

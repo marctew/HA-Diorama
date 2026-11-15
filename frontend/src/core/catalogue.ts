@@ -36,6 +36,11 @@ export interface CatalogueModel {
   stairs?: boolean;
   /** Goes on a wall: how far off the floor it is put to begin with. */
   mount_height?: number;
+  /** For a light: how far up the model its light comes from. */
+  light_height?: number;
+  /** A strip of light: lights what is under it along its length, and fixes
+   * itself under a wall unit it is dropped on. */
+  strip?: boolean;
 }
 
 export interface CatalogueSource {

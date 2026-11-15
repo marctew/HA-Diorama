@@ -7,7 +7,7 @@ import { kindForEntity } from "./bindings";
 import { findModel, type Catalogue } from "./catalogue";
 import { pointInPolygon, type Point } from "./geometry";
 import { newId, type MakeId } from "./ids";
-import { itemFootprint, itemScale, roomAt } from "./items";
+import { itemFootprint, itemScale, pickFootprint, roomAt } from "./items";
 import type { Fixture, FixtureKind, Floor, Item } from "./scene";
 
 /** The model a fixture gets when it is not put on a piece of furniture. */
@@ -30,7 +30,7 @@ export function itemToBind(
   return floor.items.find((item) => {
     if (taken.has(item.id)) return false;
     const model = findModel(catalogue, item.model);
-    return model?.kind === kind && pointInPolygon(point, itemFootprint(item, model));
+    return model?.kind === kind && pointInPolygon(point, pickFootprint(item, model));
   });
 }
 
@@ -133,7 +133,9 @@ export function fixtureHeight(
   if (!model) return fixture.z > 0 ? fixture.z : MARKER_HEIGHT;
   const scale = item ? itemScale(item)[1] : 1;
   const base = item?.z ?? fixture.z;
-  // A pendant's shade hangs a little below the ceiling; a lamp's is at its top.
+  // Where the model says; else a pendant's shade hangs a little below the
+  // ceiling, and a lamp's is at its top.
+  if (model.light_height !== undefined) return base + model.light_height * scale;
   return base + (model.hanging ? model.height - 0.5 : model.height * 0.88) * scale;
 }
 
@@ -245,4 +247,112 @@ export function isOpeningFixture(fixture: Pick<Fixture, "id">): boolean {
 export function allFixtures(floor: Pick<Floor, "vertices" | "walls" | "openings" | "fixtures">): Fixture[] {
   const openings = openingFixtures(floor, kindForEntity);
   return openings.length === 0 ? floor.fixtures : [...floor.fixtures, ...openings];
+}
+
+/** The most fittings a room is filled with at once. */
+export const MAX_FILL = 60;
+
+/** Fill a fixture's room with copies of it, in evenly spaced rows and
+ * columns: downlights in a ceiling. The fixture itself becomes the first of
+ * them, and any others like it in the room (same entity, same model) are
+ * replaced. Spots that fall outside the room, in an L-shaped one, are left
+ * out. Returns the floor unchanged if the fixture is in no room. */
+export function fillRoom(
+  floor: Floor,
+  fixtureId: string,
+  rows: number,
+  columns: number,
+  makeId: MakeId = newId,
+): { floor: Floor; ids: string[] } {
+  const fixture = floor.fixtures.find((candidate) => candidate.id === fixtureId);
+  const room = fixture && floor.rooms.find((candidate) => candidate.id === fixture.room);
+  const count = Math.floor(rows) * Math.floor(columns);
+  if (!fixture || !room || fixture.item !== null || !(count >= 1) || count > MAX_FILL) {
+    return { floor, ids: [] };
+  }
+  const position = new Map(floor.vertices.map((vertex) => [vertex.id, vertex]));
+  const outline = room.boundary.map((id) => position.get(id)).filter((point) => point !== undefined);
+  if (outline.length < 3) return { floor, ids: [] };
+  const xs = outline.map((point) => point.x);
+  const ys = outline.map((point) => point.y);
+  const [left, top] = [Math.min(...xs), Math.min(...ys)];
+  const [width, depth] = [Math.max(...xs) - left, Math.max(...ys) - top];
+  const spots: Point[] = [];
+  for (let row = 0; row < Math.floor(rows); row++) {
+    for (let column = 0; column < Math.floor(columns); column++) {
+      const spot = {
+        x: round(left + (width * (column + 0.5)) / Math.floor(columns)),
+        y: round(top + (depth * (row + 0.5)) / Math.floor(rows)),
+      };
+      if (pointInPolygon(spot, outline)) spots.push(spot);
+    }
+  }
+  if (spots.length === 0) return { floor, ids: [] };
+  const alike = (other: Fixture) =>
+    other.entity_id === fixture.entity_id &&
+    other.model === fixture.model &&
+    other.item === null &&
+    other.room === fixture.room;
+  const made: Fixture[] = spots.map((spot, index) => ({
+    ...fixture,
+    options: { ...fixture.options },
+    ...spot,
+    id: index === 0 ? fixture.id : makeId("x"),
+  }));
+  return {
+    floor: { ...floor, fixtures: [...floor.fixtures.filter((other) => !alike(other)), ...made] },
+    ids: made.map((one) => one.id),
+  };
+}
+
+/** How many fixtures in the same room share each fixture's entity: eight
+ * downlights on one switch light a room once, not eight times over. */
+export function fittingsSharing(fixtures: readonly Fixture[]): Map<string, number> {
+  const groups = new Map<string, number>();
+  const key = (fixture: Fixture) => `${fixture.entity_id}|${fixture.room ?? ""}`;
+  for (const fixture of fixtures) groups.set(key(fixture), (groups.get(key(fixture)) ?? 0) + 1);
+  return new Map(fixtures.map((fixture) => [fixture.id, groups.get(key(fixture)) ?? 1]));
+}
+
+/** A strip of light as the 3D view draws it. */
+export interface StripLight {
+  /** Its middle on the plan, and how far off the floor it is. */
+  x: number;
+  y: number;
+  z: number;
+  length: number;
+  /** Degrees, as for furniture. */
+  rotation: number;
+  /** The height of whatever it shines down on: a worktop, a shelf, the floor. */
+  below: number;
+}
+
+/** The strip a fixture is, if it is bound to a strip of light. */
+export function stripLight(
+  fixture: Pick<Fixture, "item">,
+  floor: Pick<Floor, "items">,
+  catalogue: Catalogue,
+): StripLight | undefined {
+  const item = fixture.item !== null ? floor.items.find((i) => i.id === fixture.item) : undefined;
+  const model = item && findModel(catalogue, item.model);
+  if (!item || !model?.strip) return undefined;
+  const corners = itemFootprint(item, model);
+  const middle = { x: (corners[0].x + corners[2].x) / 2, y: (corners[0].y + corners[2].y) / 2 };
+  let below = 0;
+  for (const other of floor.items) {
+    if (other.id === item.id || other.id === item.on) continue;
+    const otherModel = findModel(catalogue, other.model);
+    if (!otherModel || otherModel.strip) continue;
+    const top = other.z + otherModel.height * itemScale(other)[1];
+    if (top > below && top < item.z - 0.05 && pointInPolygon(middle, itemFootprint(other, otherModel))) {
+      below = top;
+    }
+  }
+  return {
+    ...middle,
+    z: item.z,
+    length: model.width * itemScale(item)[0],
+    rotation: item.rotation,
+    below: round(below),
+  };
 }

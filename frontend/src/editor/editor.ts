@@ -607,8 +607,10 @@ export class DioramaEditor extends LitElement {
             }}
             @plan-edit=${(event: CustomEvent<{ floor: Floor; placedFixture?: string }>) => {
               this.applyEdit(event.detail.floor);
-              // A device goes on the floor once: the next pick is another one.
-              if (event.detail.placedFixture) this.placingEntity = undefined;
+              // A light or switch stays picked: it may work several fittings.
+              // Anything else goes on the floor once.
+              const several = this.placingKind === "light" || this.placingKind === "switch";
+              if (event.detail.placedFixture && !several) this.placingEntity = undefined;
             }}
             @plan-select=${(event: CustomEvent<{ selection: Selection }>) =>
               (this.selection = event.detail.selection)}

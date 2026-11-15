@@ -1,5 +1,5 @@
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { EMPTY_CATALOGUE, findModel, type Catalogue } from "../core/catalogue";
 import { distance, polygonArea, polygonPerimeter } from "../core/geometry";
 import { itemSize, resizeItem, ROTATE_STEP, updateItems } from "../core/items";
@@ -12,7 +12,7 @@ import {
   type FixtureVisual,
   type TapAction,
 } from "../core/bindings";
-import { bindableEntities, MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
+import { bindableEntities, fillRoom, MARKER_HEIGHT, updateFixtures } from "../core/fixtures";
 import { updateOpening } from "../core/openings";
 import type { Fixture, Floor, Item, Opening, Room } from "../core/scene";
 import {
@@ -56,6 +56,9 @@ export class DioramaInspector extends LitElement {
   @property({ attribute: false }) catalogue: Catalogue = EMPTY_CATALOGUE;
   /** The plan image is being slid about. */
   @property({ type: Boolean }) movingTrace = false;
+  /** How many rows and columns "Fill the room" lays out. */
+  @state() private fillRows = 2;
+  @state() private fillColumns = 3;
   @property() units: UnitSystem = "metric";
 
   protected override render(): TemplateResult | typeof nothing {
@@ -398,6 +401,42 @@ export class DioramaInspector extends LitElement {
       </label>
       ${opening.type === "door"
         ? html`<label>
+              <span>Opens by</span>
+              <select
+                @change=${(event: Event) =>
+                  change(
+                    value(event) === "sliding"
+                      ? // A sliding door is nearly always glass.
+                        { style: "sliding", glazed: true }
+                      : { style: "hinged" },
+                  )}
+              >
+                <option value="hinged" ?selected=${opening.style === "hinged"}>Swinging</option>
+                <option value="sliding" ?selected=${opening.style === "sliding"}>Sliding</option>
+              </select>
+            </label>
+            <label class="check">
+              <input
+                type="checkbox"
+                .checked=${opening.glazed}
+                @change=${(event: Event) =>
+                  change({ glazed: (event.target as HTMLInputElement).checked })}
+              />
+              <span>Glass</span>
+            </label>`
+        : nothing}
+      ${opening.type === "door" && opening.style === "sliding"
+        ? html`<div class="actions tight">
+            <button
+              class="plain"
+              @click=${() => change({ hinge: opening.hinge === "start" ? "end" : "start" })}
+            >
+              Slide the other way
+            </button>
+          </div>`
+        : nothing}
+      ${opening.type === "door" && opening.style !== "sliding"
+        ? html`<label>
               <span>Leaves</span>
               <select
                 @change=${(event: Event) => change({ leaves: value(event) === "2" ? 2 : 1 })}
@@ -441,7 +480,8 @@ export class DioramaInspector extends LitElement {
       </label>
       <p class="help">
         A door or window sensor shows it open or shut. A blind, shutter or garage door shows how far
-        down it is, and a tap works it. A door with no sensor stands open.
+        down it is, and a tap works it. With no sensor a swinging door stands open and a sliding one
+        shut.
       </p>
       <p class="help">
         Drag it along the wall, or onto another wall. Drag either end to make it wider or narrower.
@@ -506,6 +546,65 @@ export class DioramaInspector extends LitElement {
         Press and hold always shows its
         details.${fixture.kind === "lock" ? " A lock is never worked by a tap." : ""}
       </p>
+      ${fixture.kind === "light" && !item
+        ? html`<label>
+              <span>Shown as</span>
+              <select
+                @change=${(event: Event) => {
+                  const picked = value(event);
+                  change(picked ? { model: picked, z: 0 } : { model: null, z: MARKER_HEIGHT });
+                }}
+              >
+                ${this.catalogue.models
+                  .filter((one) => one.kind === "light" && one.hanging)
+                  .map(
+                    (one) =>
+                      html`<option value=${one.id} ?selected=${one.id === fixture.model}>
+                        ${one.name}
+                      </option>`,
+                  )}
+                <option value="" ?selected=${!fixture.model}>A marker</option>
+              </select>
+            </label>
+            ${room
+              ? html`<div class="fill">
+                    <label>
+                      <span>Rows</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        .value=${String(this.fillRows)}
+                        @change=${(event: Event) =>
+                          (this.fillRows = Math.min(10, Math.max(1, Math.round(Number(value(event)) || 1))))}
+                      />
+                    </label>
+                    <label>
+                      <span>Columns</span>
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        .value=${String(this.fillColumns)}
+                        @change=${(event: Event) =>
+                          (this.fillColumns = Math.min(10, Math.max(1, Math.round(Number(value(event)) || 1))))}
+                      />
+                    </label>
+                    <button
+                      class="plain"
+                      title="Space this many of it evenly across the room, all on the same light"
+                      @click=${() =>
+                        this.edit(fillRoom(floor, fixture.id, this.fillRows, this.fillColumns).floor)}
+                    >
+                      Fill the room
+                    </button>
+                  </div>
+                  <p class="help">
+                    For downlights: lays out that many across ${room.name || "the room"}, all worked by
+                    this light. It replaces the ones like it already there.
+                  </p>`
+              : nothing}`
+        : nothing}
       ${item || fixture.model
         ? nothing
         : html`<label>
@@ -827,6 +926,15 @@ export class DioramaInspector extends LitElement {
       .plain.on {
         border-color: var(--diorama-accent);
         background: color-mix(in srgb, var(--diorama-accent) 16%, transparent);
+      }
+      .fill {
+        display: grid;
+        grid-template-columns: 64px 64px minmax(0, 1fr);
+        gap: 8px;
+        align-items: end;
+      }
+      .fill button {
+        height: 38px;
       }
       .trio {
         display: grid;

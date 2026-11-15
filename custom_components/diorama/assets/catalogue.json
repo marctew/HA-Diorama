@@ -231,6 +231,54 @@
       "kind": "light"
     },
     {
+      "id": "basics/downlight",
+      "name": "Downlight",
+      "category": "Lighting",
+      "tags": [
+        "spotlight",
+        "recessed",
+        "ceiling",
+        "light"
+      ],
+      "source": "basics",
+      "file": "models/basics/downlight.glb",
+      "width": 0.1,
+      "depth": 0.1,
+      "height": 2.4,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "hanging": true,
+      "kind": "light",
+      "light_height": 2.38
+    },
+    {
+      "id": "basics/led_strip",
+      "name": "LED strip",
+      "category": "Lighting",
+      "tags": [
+        "strip",
+        "under cabinet",
+        "tape",
+        "light"
+      ],
+      "source": "basics",
+      "file": "models/basics/led_strip.glb",
+      "width": 1.0,
+      "depth": 0.02,
+      "height": 0.016,
+      "centre": [
+        0.0,
+        0.0
+      ],
+      "against_wall": false,
+      "kind": "light",
+      "light_height": 0.0,
+      "strip": true
+    },
+    {
       "id": "basics/dining_table",
       "name": "Dining table",
       "category": "Kitchen and dining",

@@ -70,6 +70,18 @@ export function itemFootprint(item: Item, model: CatalogueModel | undefined): Po
   return [corner(-w, -d), corner(w, -d), corner(w, d), corner(-w, d)];
 }
 
+/** The outline to pick an item by: its own, except that a strip of light,
+ * which is two centimetres across, is taken to be wide enough to hit. */
+export function pickFootprint(item: Item, model: CatalogueModel | undefined): Point[] {
+  const depth = itemSize(item, model).depth;
+  if (!model?.strip || depth >= PICK_DEPTH) return itemFootprint(item, model);
+  const stretch: [number, number, number] = [...item.stretch];
+  stretch[1] *= PICK_DEPTH / depth;
+  return itemFootprint({ ...item, stretch }, model);
+}
+
+const PICK_DEPTH = 0.16;
+
 /** The least and most a piece can be stretched to, in metres. */
 export const MIN_SIZE = 0.05;
 export const MAX_SIZE = 30;

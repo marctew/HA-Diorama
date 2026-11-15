@@ -72,6 +72,10 @@ export interface Opening {
   hinge: "start" | "end";
   /** Doors: the side it opens to. 1 is to the left of the wall's direction. */
   swing: 1 | -1;
+  /** Doors: swinging on hinges, or sliding along the wall. */
+  style: "hinged" | "sliding";
+  /** Doors: made of glass. */
+  glazed: boolean;
 }
 
 export interface Room {

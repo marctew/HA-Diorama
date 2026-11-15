@@ -22,6 +22,7 @@ import {
 import {
   itemFootprint,
   itemScale,
+  pickFootprint,
   moveItems,
   normaliseRotation,
   placeItem,
@@ -32,6 +33,7 @@ import {
 import { restack } from "../core/stacking";
 import {
   doorLeaves,
+  slidingPanels,
   moveOpening,
   resizeOpening,
   nearestWall,
@@ -396,7 +398,9 @@ export class DioramaPlanView extends LitElement {
       return this.renderFootprint(
         item,
         model,
-        `item ${selected.has(item.id) ? "selected" : ""} ${model ? "" : "unknown"}`,
+        `item ${selected.has(item.id) ? "selected" : ""} ${model ? "" : "unknown"} ${
+          model?.strip ? "strip" : ""
+        }`,
       );
     });
   }
@@ -590,7 +594,10 @@ export class DioramaPlanView extends LitElement {
 
   private renderOpening(
     floor: Floor,
-    opening: Pick<Opening, "wall" | "offset" | "width" | "type" | "leaves" | "hinge" | "swing">,
+    opening: Pick<
+      Opening,
+      "wall" | "offset" | "width" | "type" | "leaves" | "hinge" | "swing" | "style"
+    >,
     classes: string,
   ): TemplateResult {
     const ends = openingEnds(floor, opening);
@@ -606,10 +613,24 @@ export class DioramaPlanView extends LitElement {
     const corner = (along: Point, side: number) => `${along.x - uy * half * side},${along.y + ux * half * side}`;
     const gap = `${corner(a, 1)} ${corner(b, 1)} ${corner(b, -1)} ${corner(a, -1)}`;
     const pixels = length / opening.width;
+    // A sliding door: its two panels, each in its own track.
+    const panels = slidingPanels(opening).map((panel) => {
+      const from = (panel.from - opening.offset) * pixels;
+      const to = from + panel.width * pixels;
+      const shift = panel.track * 2;
+      return svg`<line
+        x1=${a.x + ux * from - uy * shift}
+        y1=${a.y + uy * from + ux * shift}
+        x2=${a.x + ux * to - uy * shift}
+        y2=${a.y + uy * to + ux * shift}
+      />`;
+    });
     const symbol =
       opening.type === "window"
         ? svg`<line x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`
-        : // Each leaf, standing open, and the sweep of its swing. An archway
+        : panels.length > 0
+          ? panels
+          : // Each leaf, standing open, and the sweep of its swing. An archway
           // has none.
           doorLeaves(opening).map((leaf) => {
             const along = (leaf.hinge - opening.offset) * pixels;
@@ -1329,9 +1350,9 @@ export class DioramaPlanView extends LitElement {
     // piece itself, or a lamp could never be picked off a selected table.
     let item: { id: string; area: number; selected: boolean; stacked: boolean } | undefined;
     for (const candidate of floor.items) {
-      const outline = itemFootprint(candidate, findModel(this.catalogue, candidate.model));
-      if (!pointInPolygon(world, outline)) continue;
-      const area = polygonArea(outline);
+      const candidateModel = findModel(this.catalogue, candidate.model);
+      if (!pointInPolygon(world, pickFootprint(candidate, candidateModel))) continue;
+      const area = polygonArea(itemFootprint(candidate, candidateModel));
       const selected = this.selection.items.includes(candidate.id);
       const stacked = candidate.on !== null;
       const better =
@@ -1521,6 +1542,13 @@ export class DioramaPlanView extends LitElement {
         fill: color-mix(in srgb, var(--diorama-accent) 18%, transparent);
         stroke: var(--diorama-accent);
         stroke-dasharray: 5 4;
+      }
+      .item.strip polygon {
+        stroke: #d9a514;
+        stroke-width: 3;
+      }
+      .item.strip .front {
+        display: none;
       }
       .item.target polygon {
         fill: color-mix(in srgb, var(--diorama-accent) 30%, transparent);

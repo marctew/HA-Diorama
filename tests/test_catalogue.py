@@ -64,7 +64,8 @@ def test_catalogue_is_well_formed() -> None:
         assert isinstance(model["against_wall"], bool)
         # Furniture, not a dolls' house and not a warehouse.
         assert 0.05 <= model["width"] <= 4
-        assert 0.05 <= model["depth"] <= 4
+        # A strip of light is the one thing that is thinner than that.
+        assert (0.01 if model.get("strip") else 0.05) <= model["depth"] <= 4
         assert 0.01 <= model["height"] <= 3
 
 

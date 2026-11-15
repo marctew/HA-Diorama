@@ -86,7 +86,8 @@ export class DioramaDeviceDrawer extends LitElement {
       <p class="help">
         ${this.picked
           ? html`Click in the plan to place it. On furniture that suits it (a lamp for a light,
-              the TV for a media player) it becomes that. <kbd>Esc</kbd> stops.`
+              the TV for a media player) it becomes that. A light or switch stays picked, to click
+              each fitting it works. <kbd>Esc</kbd> stops.`
           : "Pick a device, then click where it is in the plan. A door or window takes its sensor or blind when you select it."}
       </p>
     `;
@@ -98,7 +99,12 @@ export class DioramaDeviceDrawer extends LitElement {
     hideWhenEmpty: boolean,
   ): TemplateResult | typeof nothing {
     if (choices.length === 0 && hideWhenEmpty) return nothing;
-    const placed = new Set(this.floor?.fixtures.map((fixture) => fixture.entity_id));
+    // How many times each is on the floor already: one switch may work
+    // eight downlights, and each of them can be placed.
+    const placed = new Map<string, number>();
+    for (const fixture of this.floor?.fixtures ?? []) {
+      placed.set(fixture.entity_id, (placed.get(fixture.entity_id) ?? 0) + 1);
+    }
     // Not yet on the floor first.
     const ordered = [...choices].sort(
       (a, b) => Number(placed.has(a.entity_id)) - Number(placed.has(b.entity_id)),
@@ -107,19 +113,20 @@ export class DioramaDeviceDrawer extends LitElement {
       <h3>${title}</h3>
       ${choices.length === 0
         ? html`<p class="note">Nothing to place in this area.</p>`
-        : ordered.map((choice) => this.renderRow(choice, placed.has(choice.entity_id)))}
+        : ordered.map((choice) => this.renderRow(choice, placed.get(choice.entity_id) ?? 0))}
     `;
   }
 
-  private renderRow(choice: EntityChoice, placed: boolean): TemplateResult {
+  private renderRow(choice: EntityChoice, placed: number): TemplateResult {
     const picked = this.picked === choice.entity_id;
     const visual = fixtureVisual(choice.kind, this.hass?.states[choice.entity_id]);
     const [r, g, b] = visual.colour.map((channel) => Math.round(channel * 255));
     return html`
       <button
         class="row ${picked ? "picked" : ""}"
-        title="${KIND_NAMES[choice.kind]}: ${choice.entity_id}"
-        ?disabled=${placed}
+        title="${KIND_NAMES[choice.kind]}: ${choice.entity_id}${placed > 0
+          ? `. On the plan ${placed === 1 ? "once" : `${placed} times`} already`
+          : ""}"
         aria-pressed=${picked}
         @click=${() =>
           this.dispatchEvent(
@@ -142,7 +149,9 @@ export class DioramaDeviceDrawer extends LitElement {
         ${visual.available && visual.label
           ? html`<span class="reading">${visual.label}</span>`
           : nothing}
-        ${placed ? html`<span class="placed">${icon("check")}</span>` : nothing}
+        ${placed > 0
+          ? html`<span class="placed">${placed > 1 ? html`<span>${placed}</span>` : nothing}${icon("check")}</span>`
+          : nothing}
       </button>
     `;
   }
@@ -282,7 +291,10 @@ export class DioramaDeviceDrawer extends LitElement {
         white-space: nowrap;
       }
       .placed {
-        display: grid;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        font-size: 12px;
         color: var(--diorama-text-muted);
       }
       .more {

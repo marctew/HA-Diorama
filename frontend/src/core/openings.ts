@@ -88,6 +88,8 @@ export function openingAt(
     leaves: 1,
     hinge: "start",
     swing: 1,
+    style: "hinged",
+    glazed: false,
   };
 }
 
@@ -219,9 +221,11 @@ export interface DoorLeaf {
 /** The leaves of a door: one, hung from either end, or two meeting in the
  * middle. Anything that is not a door has none. */
 export function doorLeaves(
-  opening: Pick<Opening, "type" | "offset" | "width" | "leaves" | "hinge">,
+  opening: Pick<Opening, "type" | "offset" | "width" | "leaves" | "hinge"> & {
+    style?: Opening["style"];
+  },
 ): DoorLeaf[] {
-  if (opening.type !== "door") return [];
+  if (opening.type !== "door" || opening.style === "sliding") return [];
   const far = opening.offset + opening.width;
   if (opening.leaves === 2) {
     return [
@@ -232,6 +236,39 @@ export function doorLeaves(
   return opening.hinge === "end"
     ? [{ hinge: far, width: opening.width, towards: -1 }]
     : [{ hinge: opening.offset, width: opening.width, towards: 1 }];
+}
+
+/** One panel of a sliding door: where along the wall it starts when the door
+ * is shut, how wide it is, how far it slides to open (negative is towards
+ * the wall's start), and which of the two tracks it runs in. */
+export interface SlidingPanel {
+  from: number;
+  width: number;
+  travel: number;
+  track: 1 | -1;
+}
+
+/** How much one panel of a sliding door laps over the other. */
+const PANEL_LAP = 0.04;
+
+/** The two panels of a sliding door. One stays where it is; the other slides
+ * across in front of it. `hinge` says which end the fixed one is at. */
+export function slidingPanels(
+  opening: Pick<Opening, "type" | "offset" | "width" | "hinge" | "style">,
+): SlidingPanel[] {
+  if (opening.type !== "door" || opening.style !== "sliding") return [];
+  const width = opening.width / 2 + PANEL_LAP / 2;
+  const far = opening.offset + opening.width;
+  const travel = opening.width - width;
+  return opening.hinge === "end"
+    ? [
+        { from: far - width, width, travel: 0, track: 1 },
+        { from: opening.offset, width, travel, track: -1 },
+      ]
+    : [
+        { from: opening.offset, width, travel: 0, track: 1 },
+        { from: far - width, width, travel: -travel, track: -1 },
+      ];
 }
 
 function change(floor: Floor, id: string, edit: (opening: Opening) => Opening): Floor {

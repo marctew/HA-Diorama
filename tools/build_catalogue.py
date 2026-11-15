@@ -94,6 +94,10 @@ def build() -> dict[str, bytes]:
             entry["stairs"] = True
         if model.mount_height is not None:
             entry["mount_height"] = model.mount_height
+        if model.light_height is not None:
+            entry["light_height"] = model.light_height
+        if model.strip:
+            entry["strip"] = True
         models.append(entry)
     catalogue = {"version": CATALOGUE_VERSION, "sources": SOURCES, "models": models}
     files["catalogue.json"] = (json.dumps(catalogue, indent=2) + "\n").encode()

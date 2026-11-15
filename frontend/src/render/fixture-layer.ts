@@ -15,12 +15,16 @@ import {
   CircleGeometry,
   Color,
   CylinderGeometry,
+  EdgesGeometry,
   Group,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   type Object3D,
   type PerspectiveCamera,
+  PlaneGeometry,
   PointLight,
   ShaderMaterial,
   SphereGeometry,
@@ -33,9 +37,16 @@ import {
 } from "three";
 import { MISSING, type FixtureVisual } from "../core/bindings";
 import type { Catalogue } from "../core/catalogue";
-import { allFixtures, fixtureHeight, isOpeningFixture } from "../core/fixtures";
+import {
+  allFixtures,
+  fittingsSharing,
+  fixtureHeight,
+  isOpeningFixture,
+  stripLight,
+} from "../core/fixtures";
+import { findModel } from "../core/catalogue";
 import { triangulate } from "../core/geometry";
-import { doorLeaves } from "../core/openings";
+import { doorLeaves, slidingPanels } from "../core/openings";
 import { roomPolygon } from "../core/rooms";
 import type { Fixture, Floor, Opening } from "../core/scene";
 
@@ -77,11 +88,16 @@ const WASH_FRAGMENT = `
   }
 `;
 
-/** A door leaf: its angle when shut, and which way it turns to open. */
+/** A door leaf: its angle when shut and which way it turns to open, or for
+ * a sliding panel where it is when shut and how far it slides. */
 interface Leaf {
   mesh: Mesh;
   shut: number;
   turn: number;
+  slide?: { from: Vector3; by: Vector3 };
+  /** How far open it stands when no sensor says: hinged doors open, so that
+   * the rooms join up; sliding ones shut, as glass hides nothing. */
+  rest: number;
 }
 
 interface Entry {
@@ -99,6 +115,12 @@ interface Entry {
   label?: { sprite: Sprite; material: SpriteMaterial; texture: CanvasTexture; shown: string };
   /** The leaves of the door this fixture is the sensor of. */
   leaves?: Leaf[];
+  /** How many fittings in the room are on the same entity as this one. */
+  sharing: number;
+  /** How big its glow is, against that of a lamp. */
+  glowSize: number;
+  /** A strip of light: the bar itself, and the light it throws below. */
+  strip?: { bar: Mesh; barMaterial: MeshBasicMaterial; pool: Mesh; poolMaterial: MeshBasicMaterial };
   /** The blind of a window, and the height of the window. */
   blind?: { mesh: Mesh; height: number };
 }
@@ -116,7 +138,16 @@ export class FixtureLayer {
   private readonly stemGeometry = new CylinderGeometry(0.012, 0.012, 1, 6).translate(0, 0.5, 0);
   private readonly stemMaterial = new MeshBasicMaterial({ color: 0x8a8f96 });
   private readonly discGeometry = new CircleGeometry(1, 40).rotateX(-Math.PI / 2);
+  private readonly barGeometry = new BoxGeometry(1, 0.022, 0.034);
+  private readonly poolGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   private readonly leafMaterial = new MeshLambertMaterial({ color: 0xa9825a });
+  private readonly glassMaterial = new MeshLambertMaterial({
+    color: 0xbfdde6,
+    transparent: true,
+    opacity: 0.4,
+    depthWrite: false,
+  });
+  private readonly frameMaterial = new LineBasicMaterial({ color: 0x4d555c });
   private readonly blindMaterial = new MeshLambertMaterial({ color: 0xe9e4d8 });
   /** 0 by day to 1 at night: lights show up more in the dark. */
   private night = 0;
@@ -147,8 +178,11 @@ export class FixtureLayer {
         if (leaves.length > 0) doors.set(opening.id, leaves);
         this.leaves.push(...leaves);
       }
-      for (const fixture of allFixtures(floor)) {
+      const fixtures = allFixtures(floor);
+      const sharing = fittingsSharing(fixtures);
+      for (const fixture of fixtures) {
         const entry = this.build(fixture, floor, elevation, catalogue);
+        entry.sharing = sharing.get(fixture.id) ?? 1;
         if (isOpeningFixture(fixture)) {
           this.buildOpening(entry, floor, elevation, wallMesh, doors);
         }
@@ -214,7 +248,11 @@ export class FixtureLayer {
     this.stemMaterial.dispose();
     this.discGeometry.dispose();
     this.leafMaterial.dispose();
+    this.glassMaterial.dispose();
+    this.frameMaterial.dispose();
     this.blindMaterial.dispose();
+    this.barGeometry.dispose();
+    this.poolGeometry.dispose();
     for (const lamp of this.lamps) lamp.dispose();
   }
 
@@ -231,10 +269,15 @@ export class FixtureLayer {
       // This hangs off a wall, not this group.
       entry.blind?.mesh.removeFromParent();
       entry.blind?.mesh.geometry.dispose();
+      entry.strip?.barMaterial.dispose();
+      entry.strip?.poolMaterial.dispose();
     }
     for (const leaf of this.leaves) {
       leaf.mesh.removeFromParent();
       leaf.mesh.geometry.dispose();
+      for (const frame of leaf.mesh.children) {
+        if (frame instanceof LineSegments) frame.geometry.dispose();
+      }
     }
     this.leaves = [];
     this.entries = [];
@@ -258,7 +301,12 @@ export class FixtureLayer {
     const marker = new Mesh(this.markerGeometry, markerMaterial);
     marker.position.copy(anchor);
     if (inWall) marker.scale.setScalar(0.8);
+    // A downlight is small: a marker the usual size would swallow it.
+    const ownModel = catalogue && fixture.model ? findModel(catalogue, fixture.model) : undefined;
+    const small = ownModel !== undefined && Math.max(ownModel.width, ownModel.depth) <= 0.15;
+    if (small) marker.scale.setScalar(0.5);
     this.group.add(marker);
+    const strip = catalogue ? stripLight(fixture, floor, catalogue) : undefined;
     if (!hasModel && !inWall) {
       // Something to stand on, so that a marker in mid-air reads as being
       // somewhere in the room.
@@ -279,7 +327,41 @@ export class FixtureLayer {
     glow.visible = false;
     this.group.add(glow);
 
-    const entry: Entry = { fixture, anchor, marker, markerMaterial, glow, glowMaterial };
+    const entry: Entry = {
+      fixture,
+      anchor,
+      marker,
+      markerMaterial,
+      glow,
+      glowMaterial,
+      sharing: 1,
+      // A downlight is a point of light, not a lampshade.
+      glowSize: small ? 0.4 : 1,
+    };
+    if (strip) {
+      // The bar lights up along its length, and throws a band of light on
+      // whatever is under it. No round marker: the bar is the thing to tap.
+      marker.visible = false;
+      const turn = (-strip.rotation * Math.PI) / 180;
+      const barMaterial = new MeshBasicMaterial();
+      const bar = new Mesh(this.barGeometry, barMaterial);
+      bar.position.set(strip.x, elevation + strip.z + 0.008, strip.y);
+      bar.scale.set(strip.length, 1, 1);
+      bar.rotation.y = turn;
+      const poolMaterial = new MeshBasicMaterial({
+        map: this.glowTexture,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+      });
+      const pool = new Mesh(this.poolGeometry, poolMaterial);
+      pool.position.set(strip.x, elevation + strip.below + 0.014, strip.y);
+      pool.scale.set(strip.length + 0.35, 1, 0.75);
+      pool.rotation.y = turn;
+      pool.visible = false;
+      this.group.add(bar, pool);
+      entry.strip = { bar, barMaterial, pool, poolMaterial };
+    }
     if (fixture.kind === "light") {
       entry.washMaterial = new ShaderMaterial({
         vertexShader: WASH_VERTEX,
@@ -329,20 +411,49 @@ export class FixtureLayer {
     const parent = wallMesh(floor.id, wall.id);
     // A wall's mesh is already at its floor's height.
     const base = parent ? 0 : elevation;
-    return doorLeaves(opening).map((leaf) => {
-      const mesh = new Mesh(new BoxGeometry(1, 1, 0.045).translate(0.5, 0.5, 0), this.leafMaterial);
+    const panel = (thickness: number): Mesh => {
+      const geometry = new BoxGeometry(1, 1, thickness).translate(0.5, 0.5, 0);
+      if (!opening.glazed) {
+        const solid = new Mesh(geometry, this.leafMaterial);
+        solid.castShadow = true;
+        solid.receiveShadow = true;
+        return solid;
+      }
+      // Glass, with its frame drawn as the edges of the pane.
+      const glass = new Mesh(geometry, this.glassMaterial);
+      glass.renderOrder = 1;
+      glass.add(new LineSegments(new EdgesGeometry(geometry), this.frameMaterial));
+      return glass;
+    };
+    const hinged: Leaf[] = doorLeaves(opening).map((leaf) => {
+      const mesh = panel(0.045);
       mesh.position.set(a.x + along.x * leaf.hinge, base + opening.sill, a.y + along.y * leaf.hinge);
       mesh.scale.set(leaf.width, opening.height, 1);
       // A leaf hung from the far end lies back along the wall, and turns the
       // other way to open to the same side.
       const shut = leaf.towards === 1 ? angle : angle + Math.PI;
       const turn = -leaf.towards * opening.swing * DOOR_SWING;
-      mesh.rotation.y = shut + turn;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      (parent ?? this.group).add(mesh);
-      return { mesh, shut, turn };
+      return { mesh, shut, turn, rest: 1 };
     });
+    // Sliding panels run in two tracks, side by side in the wall.
+    const sliding: Leaf[] = slidingPanels(opening).map((one) => {
+      const mesh = panel(0.03);
+      const across = one.track * 0.02;
+      const from = new Vector3(
+        a.x + along.x * one.from - along.y * across,
+        base + opening.sill,
+        a.y + along.y * one.from + along.x * across,
+      );
+      mesh.scale.set(one.width, opening.height, 1);
+      const by = new Vector3(along.x * one.travel, 0, along.y * one.travel);
+      return { mesh, shut: angle, turn: 0, slide: { from, by }, rest: 0 };
+    });
+    const leaves = [...hinged, ...sliding];
+    for (const leaf of leaves) {
+      setLeaf(leaf, leaf.rest);
+      (parent ?? this.group).add(leaf.mesh);
+    }
+    return leaves;
   }
 
   /** What a door's or window's own entity adds: a blind for a cover, and for
@@ -369,7 +480,11 @@ export class FixtureLayer {
     const base = parent ? 0 : elevation;
 
     let mesh: Mesh | undefined;
-    if (entry.fixture.kind === "cover") {
+    if (entry.fixture.kind === "cover" && opening.style === "sliding" && opening.type === "door") {
+      // A powered sliding door: its panels follow the cover.
+      entry.leaves = doors.get(opening.id);
+      entry.marker.visible = false;
+    } else if (entry.fixture.kind === "cover") {
       // A door that rolls or lifts has no leaves to swing.
       for (const leaf of doors.get(opening.id) ?? []) leaf.mesh.visible = false;
       // Hangs from the top of the opening; scaled to how far it is down.
@@ -468,11 +583,17 @@ export class FixtureLayer {
       entry.markerMaterial.transparent = !visual.available;
       entry.markerMaterial.opacity = visual.available ? 1 : 0.45;
       const glowing = visual.available && visual.glows;
-      entry.glow.visible = glowing;
+      entry.glow.visible = glowing && !entry.strip;
+      if (entry.strip) {
+        entry.strip.barMaterial.color.copy(colour);
+        entry.strip.pool.visible = glowing;
+        entry.strip.poolMaterial.color.copy(colour);
+        entry.strip.poolMaterial.opacity = (0.35 + 0.45 * visual.level) * (1 + 0.3 * this.night);
+      }
       if (glowing) {
         entry.glowMaterial.color.copy(colour);
         entry.glowMaterial.opacity = 0.55 + 0.45 * visual.level;
-        entry.glow.scale.setScalar(0.7 + 0.9 * visual.level);
+        entry.glow.scale.setScalar((0.7 + 0.9 * visual.level) * entry.glowSize);
         lit.push({ entry, visual });
       }
       if (entry.wash && entry.washMaterial) {
@@ -480,7 +601,11 @@ export class FixtureLayer {
         if (glowing) {
           const uniforms = entry.washMaterial.uniforms;
           (uniforms.uColour.value as Color).copy(colour);
-          uniforms.uStrength.value = (0.1 + 0.22 * visual.level) * (1 + 0.3 * this.night);
+          // Fittings on one switch light the room between them; a strip
+          // lights what is under it more than it lights the room.
+          const share = (entry.strip ? 0.3 : 1) / entry.sharing;
+          uniforms.uStrength.value =
+            (0.1 + 0.22 * visual.level) * (1 + 0.3 * this.night) * share;
           uniforms.uRadius.value = 2.4 + 1.6 * visual.level;
         }
       }
@@ -492,7 +617,7 @@ export class FixtureLayer {
       }
       this.applyLabel(entry, visual);
       const open = visual.available ? (visual.open ?? 0) : 0;
-      for (const leaf of entry.leaves ?? []) leaf.mesh.rotation.y = leaf.shut + leaf.turn * open;
+      for (const leaf of entry.leaves ?? []) setLeaf(leaf, open);
       if (entry.blind) {
         // Never quite gone: rolled up, it is still a strip at the top.
         const down = Math.max(0.07 / entry.blind.height, 1 - open);
@@ -515,6 +640,12 @@ export class FixtureLayer {
       lamp.intensity = 4 * source.visual.level;
     });
   }
+}
+
+/** Put a door leaf or sliding panel where it is when this far open, 0 to 1. */
+function setLeaf(leaf: Leaf, open: number): void {
+  leaf.mesh.rotation.y = leaf.shut + leaf.turn * open;
+  if (leaf.slide) leaf.mesh.position.copy(leaf.slide.from).addScaledVector(leaf.slide.by, open);
 }
 
 /** A soft round blob: white in the middle, fading to nothing. */

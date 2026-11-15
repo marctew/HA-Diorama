@@ -91,4 +91,10 @@ export const ITEM_DEFAULTS = {
   on: null,
   cut_above: true,
 };
-export const DOOR_DEFAULTS = { leaves: 1 as const, hinge: "start" as const, swing: 1 as const };
+export const DOOR_DEFAULTS = {
+  leaves: 1 as const,
+  hinge: "start" as const,
+  swing: 1 as const,
+  style: "hinged" as const,
+  glazed: false,
+};

@@ -2,6 +2,14 @@
 
 The notes of each release are what Home Assistant shows on Diorama's update. Anything that needs you to do something goes first.
 
+## 0.3.0
+
+- Downlights: a light can be shown as a downlight in the ceiling, and "Fill the room" lays out rows and columns of them, all worked by the one light.
+- The same device can be placed more than once. A light or switch stays picked while you click each fitting it works.
+- LED strips: a strip of light that stretches to any length, fixes itself under a wall unit it is dropped on, and lights the worktop below.
+- Sliding doors and glass doors: a door can slide instead of swing, and any door can be glass. A sliding door with no sensor is drawn shut.
+- Fittings on the same light share the light they throw on the floor, so eight downlights do not white a room out.
+
 ## 0.2.0
 
 Houses drawn with 0.1.0 load as they are. Once a house has been saved with 0.2.0, do not go back to 0.1.0 with it.
